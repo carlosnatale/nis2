@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 # Page configuration
@@ -150,7 +148,7 @@ with col4:
     compliance_score = 78  # Fixed value for this mockup
     st.markdown(f'<div class="metric-value">{compliance_score}%</div>', unsafe_allow_html=True)
     # Create a progress bar
-    st.progress(compliance_score)
+    st.progress(compliance_score/100)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # Charts Section
@@ -160,23 +158,29 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Supplier Compliance Over Time")
-    fig = px.line(filtered_supplier_df, x='Date', y='Compliance_Score', color='Supplier', 
-                  markers=True, title="Supplier Compliance Scores Over Time")
-    st.plotly_chart(fig, use_container_width=True)
+    # Pivot data for easier charting
+    pivot_df = filtered_supplier_df.pivot_table(
+        index='Date', 
+        columns='Supplier', 
+        values='Compliance_Score'
+    ).reset_index()
+    
+    # Create line chart using Streamlit
+    st.line_chart(pivot_df.set_index('Date'))
 
 with col2:
     st.subheader("Vulnerability Management")
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=vuln_df['Date'], y=vuln_df['Critical_Vulnerabilities'],
-                         name='Critical Vulnerabilities', marker_color='indianred'))
-    fig.add_trace(go.Scatter(x=vuln_df['Date'], y=vuln_df['Remediation_Time_Days'],
-                             name='Remediation Time (Days)', line=dict(color='royalblue', width=3), yaxis='y2'))
-    fig.update_layout(
-        title='Vulnerabilities Discovered vs Remediation Time',
-        yaxis=dict(title='Critical Vulnerabilities'),
-        yaxis2=dict(title='Remediation Time (Days)', overlaying='y', side='right')
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    
+    # Create two columns for the two charts
+    col2_1, col2_2 = st.columns(2)
+    
+    with col2_1:
+        st.markdown("**Critical Vulnerabilities**")
+        st.bar_chart(vuln_df.set_index('Date')['Critical_Vulnerabilities'])
+    
+    with col2_2:
+        st.markdown("**Remediation Time (Days)**")
+        st.line_chart(vuln_df.set_index('Date')['Remediation_Time_Days'])
 
 # Incident Response Section
 st.header("🚨 Incident Response Metrics")
@@ -185,18 +189,12 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Incident Trends")
-    fig = px.bar(incident_df, x='Date', y='Incidents', title="Security Incidents per Month")
-    st.plotly_chart(fig, use_container_width=True)
+    st.bar_chart(incident_df.set_index('Date')['Incidents'])
 
 with col2:
     st.subheader("Response Times")
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=incident_df['Date'], y=incident_df['Detection_Time_Hours'],
-                             name='Detection Time', line=dict(color='royalblue', width=3)))
-    fig.add_trace(go.Scatter(x=incident_df['Date'], y=incident_df['Containment_Time_Hours'],
-                             name='Containment Time', line=dict(color='orange', width=3)))
-    fig.update_layout(title='Incident Response Times (Hours)')
-    st.plotly_chart(fig, use_container_width=True)
+    response_df = incident_df[['Date', 'Detection_Time_Hours', 'Containment_Time_Hours']].set_index('Date')
+    st.line_chart(response_df)
 
 # Detailed Data Section
 st.header("📋 Detailed Data View")
@@ -204,7 +202,11 @@ st.header("📋 Detailed Data View")
 tab1, tab2, tab3 = st.tabs(["Supplier Compliance", "Vulnerability Data", "Incident Data"])
 
 with tab1:
-    st.dataframe(filtered_supplier_df.pivot_table(index='Date', columns='Supplier', values='Compliance_Score'), use_container_width=True)
+    st.dataframe(filtered_supplier_df.pivot_table(
+        index='Date', 
+        columns='Supplier', 
+        values='Compliance_Score'
+    ), use_container_width=True)
 
 with tab2:
     st.dataframe(vuln_df, use_container_width=True)
