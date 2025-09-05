@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+from plotly.subplots import make_subplots
 
 # Page configuration
 st.set_page_config(
@@ -13,39 +14,73 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS for professional styling
 st.markdown("""
 <style>
     .main-header {
-        font-size: 24px;
-        color: #1f77b4;
+        font-size: 28px;
+        color: #2c3e50;
         font-weight: 700;
-        margin-bottom: 20px;
+        margin-bottom: 10px;
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 10px;
+    }
+    .section-header {
+        background: linear-gradient(90deg, #2c3e50 0%, #3498db 100%);
+        color: white;
+        padding: 12px 15px;
+        border-radius: 5px;
+        margin-top: 25px;
+        margin-bottom: 15px;
+        font-weight: 600;
+        font-size: 18px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     .kpi-box {
-        background-color: #f0f2f6;
-        border-radius: 5px;
-        padding: 15px;
-        margin-bottom: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        background-color: white;
+        border-radius: 8px;
+        padding: 18px;
+        margin-bottom: 15px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        border-left: 4px solid #3498db;
+        transition: transform 0.2s;
+    }
+    .kpi-box:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.1);
     }
     .positive {
-        color: #2ecc71;
+        color: #27ae60;
+        font-weight: 600;
     }
     .negative {
         color: #e74c3c;
+        font-weight: 600;
     }
     .metric-value {
-        font-size: 20px;
+        font-size: 24px;
         font-weight: 700;
+        color: #2c3e50;
     }
-    .section-header {
-        background-color: #1f77b4;
-        color: white;
-        padding: 10px;
+    .metric-label {
+        font-size: 14px;
+        color: #7f8c8d;
+        margin-bottom: 5px;
+    }
+    .info-text {
+        background-color: #e8f4fc;
+        padding: 12px;
         border-radius: 5px;
-        margin-top: 20px;
-        margin-bottom: 10px;
+        border-left: 4px solid #3498db;
+        margin-bottom: 20px;
+        font-size: 14px;
+    }
+    .tab-container {
+        background-color: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -137,22 +172,37 @@ governance_df, supply_chain_df, asset_df, incident_df, employee_df, product_df =
 
 # Dashboard title
 st.title("🚗 Automotive NIS2 Compliance Dashboard")
-st.markdown("Monitoring all 24 key performance indicators for NIS2 implementation and execution")
+st.markdown("### Comprehensive Monitoring of Key Performance Indicators for NIS2 Implementation")
 
-# Sidebar filters
-st.sidebar.header("Filters")
-date_range = st.sidebar.date_input(
-    "Select Date Range",
-    value=(governance_df['Date'].min(), governance_df['Date'].max()),
-    min_value=governance_df['Date'].min(),
-    max_value=governance_df['Date'].max()
-)
-
-selected_suppliers = st.sidebar.multiselect(
-    "Select Suppliers",
-    options=supply_chain_df['Supplier'].unique(),
-    default=supply_chain_df['Supplier'].unique()
-)
+# Sidebar
+with st.sidebar:
+    st.header("Dashboard Controls")
+    st.markdown("---")
+    
+    date_range = st.date_input(
+        "Select Date Range",
+        value=(governance_df['Date'].min(), governance_df['Date'].max()),
+        min_value=governance_df['Date'].min(),
+        max_value=governance_df['Date'].max()
+    )
+    
+    selected_suppliers = st.multiselect(
+        "Select Suppliers",
+        options=supply_chain_df['Supplier'].unique(),
+        default=supply_chain_df['Supplier'].unique()
+    )
+    
+    st.markdown("---")
+    st.markdown("### NIS2 Overview")
+    st.info("""
+    The NIS2 Directive enhances cybersecurity across the EU. 
+    Automotive companies must implement comprehensive security measures 
+    and report significant incidents within strict timelines.
+    """)
+    
+    st.markdown("---")
+    st.markdown("**Report Generated:**")
+    st.markdown(f"{datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
 # Filter data based on selections
 filtered_supply_chain_df = supply_chain_df[
@@ -164,32 +214,91 @@ filtered_supply_chain_df = supply_chain_df[
 # Overall Compliance Score
 overall_compliance = 78  # This could be calculated from all metrics
 
+# Executive Summary
+st.markdown("## Executive Summary")
 col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.markdown("**Overall NIS2 Compliance**")
-    st.markdown(f'<div class="metric-value">{overall_compliance}%</div>', unsafe_allow_html=True)
-    st.progress(overall_compliance/100)
-with col2:
-    st.markdown("**Critical Suppliers Compliant**")
-    current_val = filtered_supply_chain_df[filtered_supply_chain_df['Date'] == filtered_supply_chain_df['Date'].max()]['Compliance_Score'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
-with col3:
-    st.markdown("**Vulnerability Remediation**")
-    current_val = asset_df[asset_df['Date'] == asset_df['Date'].max()]['Remediation_Time_Days'].values[0]
-    st.markdown(f'<div class="metric-value">{current_val:.1f} days</div>', unsafe_allow_html=True)
-with col4:
-    st.markdown("**Incident Detection Time**")
-    current_val = incident_df[incident_df['Date'] == incident_df['Date'].max()]['Detection_Time_Hours'].values[0]
-    st.markdown(f'<div class="metric-value">{current_val:.1f} hours</div>', unsafe_allow_html=True)
 
+with col1:
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = overall_compliance,
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        title = {'text': "Overall Compliance"},
+        gauge = {
+            'axis': {'range': [0, 100]},
+            'bar': {'color': "#3498db"},
+            'steps': [
+                {'range': [0, 50], 'color': "#e74c3c"},
+                {'range': [50, 75], 'color': "#f39c12"},
+                {'range': [75, 100], 'color': "#2ecc71"}
+            ],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': 90
+            }
+        }
+    ))
+    fig.update_layout(height=250)
+    st.plotly_chart(fig, use_container_width=True)
+
+with col2:
+    # Critical Suppliers Compliance
+    current_val = filtered_supply_chain_df[filtered_supply_chain_df['Date'] == filtered_supply_chain_df['Date'].max()]['Compliance_Score'].mean()
+    fig = go.Figure(go.Indicator(
+        mode = "number",
+        value = current_val,
+        number = {'suffix': "%"},
+        title = {"text": "Supplier Compliance"},
+        domain = {'x': [0, 1], 'y': [0, 1]}
+    ))
+    fig.update_layout(height=250)
+    st.plotly_chart(fig, use_container_width=True)
+
+with col3:
+    # Vulnerability Remediation
+    current_val = asset_df[asset_df['Date'] == asset_df['Date'].max()]['Remediation_Time_Days'].values[0]
+    fig = go.Figure(go.Indicator(
+        mode = "number",
+        value = current_val,
+        number = {'suffix': " days"},
+        title = {"text": "Avg. Remediation Time"},
+        domain = {'x': [0, 1], 'y': [0, 1]}
+    ))
+    fig.update_layout(height=250)
+    st.plotly_chart(fig, use_container_width=True)
+
+with col4:
+    # Incident Detection Time
+    current_val = incident_df[incident_df['Date'] == incident_df['Date'].max()]['Detection_Time_Hours'].values[0]
+    fig = go.Figure(go.Indicator(
+        mode = "number",
+        value = current_val,
+        number = {'suffix': " hours"},
+        title = {"text": "Incident Detection Time"},
+        domain = {'x': [0, 1], 'y': [0, 1]}
+    ))
+    fig.update_layout(height=250)
+    st.plotly_chart(fig, use_container_width=True)
+
+# KPI Sections with detailed explanations
 # 1. Governance & Risk Management Section
 st.markdown('<div class="section-header">Governance & Risk Management</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure the organization's cybersecurity governance maturity:
+    - **Management Training**: Percentage of senior management trained on cybersecurity responsibilities
+    - **Budget Allocation**: Cybersecurity budget as a percentage of total IT/OT budget
+    - **Crisis Plans**: Number of defined and tested cyber crisis management plans
+    - **Risk Acknowledgement**: Time to acknowledge and assign new risks
+    """)
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**% of Management Trained**')
+    st.markdown('<div class="metric-label">Management Trained</div>', unsafe_allow_html=True)
     current_val = governance_df[governance_df['Date'] == governance_df['Date'].max()]['Mgmt_Trained_Pct'].values[0]
     prev_val = governance_df[governance_df['Date'] == governance_df['Date'].max() - pd.DateOffset(months=1)]['Mgmt_Trained_Pct'].values[0]
     change = current_val - prev_val
@@ -199,7 +308,7 @@ with col1:
 
 with col2:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Cybersecurity Budget %**')
+    st.markdown('<div class="metric-label">Cybersecurity Budget</div>', unsafe_allow_html=True)
     current_val = governance_df[governance_df['Date'] == governance_df['Date'].max()]['Cybersecurity_Budget_Pct'].values[0]
     prev_val = governance_df[governance_df['Date'] == governance_df['Date'].max() - pd.DateOffset(months=1)]['Cybersecurity_Budget_Pct'].values[0]
     change = current_val - prev_val
@@ -209,7 +318,7 @@ with col2:
 
 with col3:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Tested Crisis Plans**')
+    st.markdown('<div class="metric-label">Tested Crisis Plans</div>', unsafe_allow_html=True)
     current_val = governance_df[governance_df['Date'] == governance_df['Date'].max()]['Tested_Plans'].values[0]
     prev_val = governance_df[governance_df['Date'] == governance_df['Date'].max() - pd.DateOffset(months=1)]['Tested_Plans'].values[0]
     change = current_val - prev_val
@@ -219,7 +328,7 @@ with col3:
 
 with col4:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Risk Acknowledgement Time**')
+    st.markdown('<div class="metric-label">Risk Acknowledgement Time</div>', unsafe_allow_html=True)
     current_val = governance_df[governance_df['Date'] == governance_df['Date'].max()]['Risk_Ack_Time_Days'].values[0]
     prev_val = governance_df[governance_df['Date'] == governance_df['Date'].max() - pd.DateOffset(months=1)]['Risk_Ack_Time_Days'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -227,14 +336,30 @@ with col4:
     st.markdown(f'{"↗️" if change >= 0 else "↘️"} <span class={"positive" if change >= 0 else "negative"}>{change:+.1f} days</span>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Governance Trend Chart
+fig = px.line(governance_df, x='Date', y=['Mgmt_Trained_Pct', 'Cybersecurity_Budget_Pct'],
+              title='Governance Metrics Trend',
+              labels={'value': 'Percentage', 'variable': 'Metric'})
+fig.update_layout(height=300)
+st.plotly_chart(fig, use_container_width=True)
+
 # 2. Supply Chain & Third-Party Risk Section
 st.markdown('<div class="section-header">Supply Chain & Third-Party Risk</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure cybersecurity across the supply chain:
+    - **Supplier Compliance**: Percentage of critical suppliers compliant with security requirements
+    - **Supplier Assessments**: Percentage of suppliers with completed security assessments
+    - **Vulnerability Remediation**: Time to remediate vulnerabilities from suppliers
+    - **Supplier Incidents**: Number of security incidents originating from suppliers
+    """)
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Supplier Compliance Score**')
+    st.markdown('<div class="metric-label">Supplier Compliance Score</div>', unsafe_allow_html=True)
     current_val = filtered_supply_chain_df[filtered_supply_chain_df['Date'] == filtered_supply_chain_df['Date'].max()]['Compliance_Score'].mean()
     prev_val = filtered_supply_chain_df[filtered_supply_chain_df['Date'] == filtered_supply_chain_df['Date'].max() - pd.DateOffset(months=1)]['Compliance_Score'].mean()
     change = current_val - prev_val
@@ -244,7 +369,7 @@ with col1:
 
 with col2:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Suppliers Assessed**')
+    st.markdown('<div class="metric-label">Suppliers Assessed</div>', unsafe_allow_html=True)
     current_val = filtered_supply_chain_df[filtered_supply_chain_df['Date'] == filtered_supply_chain_df['Date'].max()]['Assessment_Completed'].mean() * 100
     prev_val = filtered_supply_chain_df[filtered_supply_chain_df['Date'] == filtered_supply_chain_df['Date'].max() - pd.DateOffset(months=1)]['Assessment_Completed'].mean() * 100
     change = current_val - prev_val
@@ -254,8 +379,7 @@ with col2:
 
 with col3:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Supplier Vuln. Remediation**')
-    # This would typically come from a different data source
+    st.markdown('<div class="metric-label">Supplier Vuln. Remediation</div>', unsafe_allow_html=True)
     current_val = 45  # Fixed for demonstration
     prev_val = 52     # Fixed for demonstration
     change = prev_val - current_val  # Lower is better
@@ -265,8 +389,7 @@ with col3:
 
 with col4:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Supplier Incidents**')
-    # This would typically come from a different data source
+    st.markdown('<div class="metric-label">Supplier Incidents</div>', unsafe_allow_html=True)
     current_val = 3   # Fixed for demonstration
     prev_val = 5      # Fixed for demonstration
     change = prev_val - current_val  # Lower is better
@@ -274,14 +397,34 @@ with col4:
     st.markdown(f'{"↗️" if change >= 0 else "↘️"} <span class={"positive" if change >= 0 else "negative"}>{change:+.0f}</span>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Supplier Compliance Trend Chart
+supplier_pivot = filtered_supply_chain_df.pivot_table(
+    index='Date', columns='Supplier', values='Compliance_Score', aggfunc='mean'
+).reset_index()
+
+fig = px.line(supplier_pivot, x='Date', y=supplier_pivot.columns[1:],
+              title='Supplier Compliance Trends',
+              labels={'value': 'Compliance Score', 'variable': 'Supplier'})
+fig.update_layout(height=300)
+st.plotly_chart(fig, use_container_width=True)
+
 # 3. Asset Management & Vulnerability Section
 st.markdown('<div class="section-header">Asset Management & Vulnerability</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure how well the organization manages its assets and vulnerabilities:
+    - **Assets Discovered**: Percentage of IT and OT assets discovered and classified
+    - **Critical Vulnerabilities**: Number of critical vulnerabilities detected
+    - **Remediation Time**: Mean time to remediate critical vulnerabilities
+    - **OT Segmentation**: Percentage of critical OT segments properly isolated
+    """)
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Assets Discovered**')
+    st.markdown('<div class="metric-label">Assets Discovered</div>', unsafe_allow_html=True)
     current_val = asset_df[asset_df['Date'] == asset_df['Date'].max()]['Assets_Discovered_Pct'].values[0]
     prev_val = asset_df[asset_df['Date'] == asset_df['Date'].max() - pd.DateOffset(months=1)]['Assets_Discovered_Pct'].values[0]
     change = current_val - prev_val
@@ -291,7 +434,7 @@ with col1:
 
 with col2:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Critical Vulnerabilities**')
+    st.markdown('<div class="metric-label">Critical Vulnerabilities</div>', unsafe_allow_html=True)
     current_val = asset_df[asset_df['Date'] == asset_df['Date'].max()]['Critical_Vulnerabilities'].values[0]
     prev_val = asset_df[asset_df['Date'] == asset_df['Date'].max() - pd.DateOffset(months=1)]['Critical_Vulnerabilities'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -301,7 +444,7 @@ with col2:
 
 with col3:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Vuln. Remediation Time**')
+    st.markdown('<div class="metric-label">Vuln. Remediation Time</div>', unsafe_allow_html=True)
     current_val = asset_df[asset_df['Date'] == asset_df['Date'].max()]['Remediation_Time_Days'].values[0]
     prev_val = asset_df[asset_df['Date'] == asset_df['Date'].max() - pd.DateOffset(months=1)]['Remediation_Time_Days'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -311,7 +454,7 @@ with col3:
 
 with col4:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**OT Segmentation**')
+    st.markdown('<div class="metric-label">OT Segmentation</div>', unsafe_allow_html=True)
     current_val = asset_df[asset_df['Date'] == asset_df['Date'].max()]['OT_Segmentation_Pct'].values[0]
     prev_val = asset_df[asset_df['Date'] == asset_df['Date'].max() - pd.DateOffset(months=1)]['OT_Segmentation_Pct'].values[0]
     change = current_val - prev_val
@@ -319,14 +462,42 @@ with col4:
     st.markdown(f'{"↗️" if change >= 0 else "↘️"} <span class={"positive" if change >= 0 else "negative"}>{change:+.1f}%</span>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Vulnerability Management Chart
+fig = make_subplots(specs=[[{"secondary_y": True}]])
+fig.add_trace(
+    go.Bar(x=asset_df['Date'], y=asset_df['Critical_Vulnerabilities'], name="Critical Vulnerabilities"),
+    secondary_y=False,
+)
+fig.add_trace(
+    go.Scatter(x=asset_df['Date'], y=asset_df['Remediation_Time_Days'], name="Remediation Time (Days)"),
+    secondary_y=True,
+)
+fig.update_layout(
+    title_text="Vulnerability Management",
+    height=300
+)
+fig.update_yaxes(title_text="Critical Vulnerabilities", secondary_y=False)
+fig.update_yaxes(title_text="Remediation Time (Days)", secondary_y=True)
+st.plotly_chart(fig, use_container_width=True)
+
 # 4. Incident Response & Resilience Section
 st.markdown('<div class="section-header">Incident Response & Resilience</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure the organization's ability to respond to and recover from incidents:
+    - **Detection Time**: Mean time to detect security incidents
+    - **Containment Time**: Mean time to contain incidents
+    - **Recovery Time**: Mean time to recover from incidents
+    - **Reporting Compliance**: Percentage of incidents reported within NIS2 timelines
+    - **Downtime**: Unplanned downtime hours attributed to security incidents
+    """)
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Incident Detection Time**')
+    st.markdown('<div class="metric-label">Incident Detection Time</div>', unsafe_allow_html=True)
     current_val = incident_df[incident_df['Date'] == incident_df['Date'].max()]['Detection_Time_Hours'].values[0]
     prev_val = incident_df[incident_df['Date'] == incident_df['Date'].max() - pd.DateOffset(months=1)]['Detection_Time_Hours'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -336,7 +507,7 @@ with col1:
 
 with col2:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Incident Containment Time**')
+    st.markdown('<div class="metric-label">Incident Containment Time</div>', unsafe_allow_html=True)
     current_val = incident_df[incident_df['Date'] == incident_df['Date'].max()]['Containment_Time_Hours'].values[0]
     prev_val = incident_df[incident_df['Date'] == incident_df['Date'].max() - pd.DateOffset(months=1)]['Containment_Time_Hours'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -346,7 +517,7 @@ with col2:
 
 with col3:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Incident Recovery Time**')
+    st.markdown('<div class="metric-label">Incident Recovery Time</div>', unsafe_allow_html=True)
     current_val = incident_df[incident_df['Date'] == incident_df['Date'].max()]['Recovery_Time_Hours'].values[0]
     prev_val = incident_df[incident_df['Date'] == incident_df['Date'].max() - pd.DateOffset(months=1)]['Recovery_Time_Hours'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -356,7 +527,7 @@ with col3:
 
 with col4:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**NIS2 Reporting Compliance**')
+    st.markdown('<div class="metric-label">NIS2 Reporting Compliance</div>', unsafe_allow_html=True)
     current_val = incident_df[incident_df['Date'] == incident_df['Date'].max()]['Reported_On_Time'].values[0]
     total_incidents = incident_df[incident_df['Date'] == incident_df['Date'].max()]['Incidents'].values[0]
     compliance_pct = (current_val / total_incidents * 100) if total_incidents > 0 else 100
@@ -367,11 +538,11 @@ with col4:
     st.markdown(f'{"↗️" if change >= 0 else "↘️"} <span class={"positive" if change >= 0 else "negative"}>{change:+.1f}%</span>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-col1, col2 = st.columns(2)
-
+# Additional KPI for this section
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Production Downtime Hours**')
+    st.markdown('<div class="metric-label">Production Downtime Hours</div>', unsafe_allow_html=True)
     current_val = incident_df[incident_df['Date'] == incident_df['Date'].max()]['Downtime_Hours'].values[0]
     prev_val = incident_df[incident_df['Date'] == incident_df['Date'].max() - pd.DateOffset(months=1)]['Downtime_Hours'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -379,14 +550,33 @@ with col1:
     st.markdown(f'{"↗️" if change >= 0 else "↘️"} <span class={"positive" if change >= 0 else "negative"}>{change:+.1f} hours</span>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Incident Response Times Chart
+response_df = incident_df[['Date', 'Detection_Time_Hours', 'Containment_Time_Hours', 'Recovery_Time_Hours']].melt(
+    id_vars='Date', var_name='Metric', value_name='Hours'
+)
+
+fig = px.line(response_df, x='Date', y='Hours', color='Metric',
+              title='Incident Response Times',
+              labels={'Hours': 'Time (Hours)', 'Metric': 'Response Phase'})
+fig.update_layout(height=300)
+st.plotly_chart(fig, use_container_width=True)
+
 # 5. Employee Awareness & Training Section
 st.markdown('<div class="section-header">Employee Awareness & Training</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure the effectiveness of security awareness and training programs:
+    - **Training Completion**: Percentage of employees completing mandatory training
+    - **Phishing Failure Rate**: Percentage of employees failing phishing tests
+    - **Employee Error Incidents**: Number of security incidents linked to employee error
+    """)
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Training Completed**')
+    st.markdown('<div class="metric-label">Training Completed</div>', unsafe_allow_html=True)
     current_val = employee_df[employee_df['Date'] == employee_df['Date'].max()]['Training_Completed_Pct'].values[0]
     prev_val = employee_df[employee_df['Date'] == employee_df['Date'].max() - pd.DateOffset(months=1)]['Training_Completed_Pct'].values[0]
     change = current_val - prev_val
@@ -396,7 +586,7 @@ with col1:
 
 with col2:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Phishing Test Failure Rate**')
+    st.markdown('<div class="metric-label">Phishing Test Failure Rate</div>', unsafe_allow_html=True)
     current_val = employee_df[employee_df['Date'] == employee_df['Date'].max()]['Phishing_Failure_Rate'].values[0]
     prev_val = employee_df[employee_df['Date'] == employee_df['Date'].max() - pd.DateOffset(months=1)]['Phishing_Failure_Rate'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -406,7 +596,7 @@ with col2:
 
 with col3:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Employee Error Incidents**')
+    st.markdown('<div class="metric-label">Employee Error Incidents</div>', unsafe_allow_html=True)
     current_val = employee_df[employee_df['Date'] == employee_df['Date'].max()]['Employee_Error_Incidents'].values[0]
     prev_val = employee_df[employee_df['Date'] == employee_df['Date'].max() - pd.DateOffset(months=1)]['Employee_Error_Incidents'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -414,14 +604,30 @@ with col3:
     st.markdown(f'{"↗️" if change >= 0 else "↘️"} <span class={"positive" if change >= 0 else "negative"}>{change:+.0f}</span>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Employee Training Chart
+fig = px.line(employee_df, x='Date', y=['Training_Completed_Pct', 'Phishing_Failure_Rate'],
+              title='Employee Training & Awareness Metrics',
+              labels={'value': 'Percentage', 'variable': 'Metric'})
+fig.update_layout(height=300)
+st.plotly_chart(fig, use_container_width=True)
+
 # 6. Product Security Section
 st.markdown('<div class="section-header">Product Security (Automotive Specific)</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure the security of automotive products and connected services:
+    - **TARA Completion**: Percentage of new vehicle models with completed Threat Analysis and Risk Assessment
+    - **Vulnerability to Patch Time**: Time from vulnerability discovery to patch availability
+    - **OTA Capable Fleet**: Percentage of connected vehicle fleet patchable Over-The-Air
+    - **PenTest Success Rate**: Percentage of successful penetration tests on vehicle systems
+    """)
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**TARA Completion**')
+    st.markdown('<div class="metric-label">TARA Completion</div>', unsafe_allow_html=True)
     current_val = product_df[product_df['Date'] == product_df['Date'].max()]['TARA_Completed_Pct'].values[0]
     prev_val = product_df[product_df['Date'] == product_df['Date'].max() - pd.DateOffset(months=1)]['TARA_Completed_Pct'].values[0]
     change = current_val - prev_val
@@ -431,7 +637,7 @@ with col1:
 
 with col2:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**Vuln. to Patch Time**')
+    st.markdown('<div class="metric-label">Vuln. to Patch Time</div>', unsafe_allow_html=True)
     current_val = product_df[product_df['Date'] == product_df['Date'].max()]['Vuln_Patch_Time_Days'].values[0]
     prev_val = product_df[product_df['Date'] == product_df['Date'].max() - pd.DateOffset(months=1)]['Vuln_Patch_Time_Days'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -441,7 +647,7 @@ with col2:
 
 with col3:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**OTA-Capable Fleet**')
+    st.markdown('<div class="metric-label">OTA-Capable Fleet</div>', unsafe_allow_html=True)
     current_val = product_df[product_df['Date'] == product_df['Date'].max()]['OTA_Capable_Pct'].values[0]
     prev_val = product_df[product_df['Date'] == product_df['Date'].max() - pd.DateOffset(months=1)]['OTA_Capable_Pct'].values[0]
     change = current_val - prev_val
@@ -451,7 +657,7 @@ with col3:
 
 with col4:
     st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('**PenTest Success Rate**')
+    st.markdown('<div class="metric-label">PenTest Success Rate</div>', unsafe_allow_html=True)
     current_val = product_df[product_df['Date'] == product_df['Date'].max()]['PenTest_Success_Rate'].values[0]
     prev_val = product_df[product_df['Date'] == product_df['Date'].max() - pd.DateOffset(months=1)]['PenTest_Success_Rate'].values[0]
     change = prev_val - current_val  # Lower is better
@@ -459,25 +665,44 @@ with col4:
     st.markdown(f'{"↗️" if change >= 0 else "↘️"} <span class={"positive" if change >= 0 else "negative"}>{change:+.1f}%</span>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Trend Visualizations
-st.markdown('<div class="section-header">Trend Analysis</div>', unsafe_allow_html=True)
+# Product Security Chart
+fig = px.line(product_df, x='Date', y=['TARA_Completed_Pct', 'OTA_Capable_Pct'],
+              title='Product Security Metrics',
+              labels={'value': 'Percentage', 'variable': 'Metric'})
+fig.update_layout(height=300)
+st.plotly_chart(fig, use_container_width=True)
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Governance", "Supply Chain", "Assets", "Incidents", "Training", "Product Security"])
+# Summary and Recommendations
+st.markdown('<div class="section-header">Summary & Recommendations</div>', unsafe_allow_html=True)
 
-with tab1:
-    st.line_chart(governance_df.set_index('Date'))
-with tab2:
-    st.line_chart(filtered_supply_chain_df.pivot_table(index='Date', columns='Supplier', values='Compliance_Score'))
-with tab3:
-    st.line_chart(asset_df.set_index('Date')[['Assets_Discovered_Pct', 'OT_Segmentation_Pct']])
-with tab4:
-    st.line_chart(incident_df.set_index('Date')[['Detection_Time_Hours', 'Containment_Time_Hours', 'Recovery_Time_Hours']])
-with tab5:
-    st.line_chart(employee_df.set_index('Date'))
-with tab6:
-    st.line_chart(product_df.set_index('Date')[['TARA_Completed_Pct', 'OTA_Capable_Pct']])
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("### 🎯 Strengths")
+    st.success("""
+    - **Strong incident response capabilities**: Detection and containment times are improving
+    - **Good progress on governance**: Management training and budget allocation are on track
+    - **Excellent security-by-design**: TARA completion for new models is at 100%
+    """)
+
+with col2:
+    st.markdown("### ⚠️ Areas for Improvement")
+    st.warning("""
+    - **Supplier security**: Critical supplier compliance needs attention
+    - **Vulnerability patching**: Vehicle vulnerability to patch time is too long
+    - **OT segmentation**: Not all critical production segments are properly isolated
+    """)
+
+st.markdown("### 📋 Recommended Actions")
+st.info("""
+1. **Implement a supplier security program** with mandatory requirements and regular audits
+2. **Streamline the patch management process** for vehicle software to reduce time-to-patch
+3. **Accelerate OT network segmentation** for all critical production systems
+4. **Enhance employee training** with more frequent phishing simulations
+5. **Develop playbooks** for supply chain security incidents
+""")
 
 # Footer
 st.markdown("---")
-st.markdown("**Disclaimer:** This dashboard contains mock data for demonstration purposes only.")
-st.markdown(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+st.markdown("**Disclaimer:** This dashboard contains mock data for demonstration purposes only. ")
+st.markdown(f"*Report generated on: {datetime.now().strftime('%Y-%m-%d %H:%M')}*")
