@@ -1,530 +1,562 @@
-"""
-Refactored Streamlit NIS2 Dashboard (tabs + improved UX)
-How to run:
-    1. python 3.9+
-    2. pip install streamlit pandas numpy plotly openpyxl
-    3. streamlit run streamlit_nis2_dashboard_app.py
-
-This version restructures the UI into tabs (Overview, Governance, Supply Chain, Assets, Incident Response, Awareness, Product Security).
-It replaces long tables with metric cards, interactive charts (Plotly), progress/gauge visuals, and expandable methodology explainers (accordions).
-Synthetic data generation remains; still reproducible via fixed seed.
-"""
-
-from __future__ import annotations
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from io import BytesIO
+from datetime import datetime, timedelta
+import random
 
-# -----------------------------
-# Config
-# -----------------------------
-RANDOM_SEED = 42
-np.random.seed(RANDOM_SEED)
+# Set a fixed random seed for reproducibility
+random.seed(42)
+np.random.seed(42)
 
+# --- 1. CONFIGURATION & DATA GENERATION ---
+
+# Define the constants
 PLANTS = [
-    "Mirafiori","Cassino","Melfi (SATA)","Pomigliano (G.B. Vico)","Modena",
-    "Atessa (SEVEL Sud)","Poissy","Mulhouse","Rennes","Sochaux","Hordain (Sevelnord)",
-    "Eisenach","Rüsselsheim","Vigo","Zaragoza","Madrid","Mangualde","Tychy",
-    "Gliwice","Trnava","Kolín","Szentgotthárd","Kragujevac","Bursa (Tofaş JV)",
-    "Luton","Ellesmere Port"
+    'Mirafiori', 'Cassino', 'Melfi (SATA)', 'Pomigliano (G.B. Vico)', 'Modena',
+    'Atessa (SEVEL Sud)', 'Poissy', 'Mulhouse', 'Rennes', 'Sochaux',
+    'Hordain (Sevelnord)', 'Eisenach', 'Rüsselsheim', 'Vigo', 'Zaragoza',
+    'Madrid', 'Mangualde', 'Tychy', 'Gliwice', 'Trnava', 'Kolín',
+    'Szentgotthárd', 'Kragujevac', 'Bursa (Tofaş JV)', 'Luton', 'Ellesmere Port'
 ]
 
-CONTROL_DOMAINS = [
-    "Governance & Policy","Risk Management","Asset & Configuration Management",
-    "Access Control & IAM","Network & Segmentation","Vulnerability & Patch Management",
-    "Secure Development & Change","Logging, Monitoring & Detection","Incident Response & Recovery",
-    "Business Continuity & DR","Backup & Restore Validation","Supplier/Third-Party Risk",
-    "Security Awareness & Phishing","Physical Security","Cloud & SaaS Security"
-]
+CONTROL_DOMAINS = {
+    '1. Governance & Policy': ['GvP-01', 'GvP-02', 'GvP-03', 'GvP-04'],
+    '2. Risk Management': ['RM-01', 'RM-02', 'RM-03'],
+    '3. Asset & Configuration Management (IT/OT)': ['ACM-01', 'ACM-02', 'ACM-03', 'ACM-04'],
+    '4. Access Control & IAM': ['AC-01', 'AC-02', 'AC-03'],
+    '5. Network & Segmentation (incl. OT/ICS)': ['NS-01', 'NS-02', 'NS-03', 'NS-04'],
+    '6. Vulnerability & Patch Management': ['VPM-01', 'VPM-02', 'VPM-03'],
+    '7. Secure Development & Change': ['SDC-01', 'SDC-02', 'SDC-03'],
+    '8. Logging, Monitoring & Detection (SOC)': ['LMD-01', 'LMD-02', 'LMD-03', 'LMD-04', 'LMD-05'],
+    '9. Incident Response & Recovery': ['IRR-01', 'IRR-02', 'IRR-03'],
+    '10. Business Continuity & DR': ['BCDR-01', 'BCDR-02', 'BCDR-03'],
+    '11. Backup & Restore Validation': ['BRV-01', 'BRV-02'],
+    '12. Supplier/Third-Party Risk': ['STP-01', 'STP-02', 'STP-03'],
+    '13. Security Awareness & Phishing': ['SAP-01', 'SAP-02'],
+    '14. Physical Security (Plant)': ['PS-01', 'PS-02', 'PS-03'],
+    '15. Cloud & SaaS Security': ['CSS-01', 'CSS-02', 'CSS-03']
+}
 
-MONTHS = 12
-END_DATE = pd.Timestamp.today().normalize()
-START_DATE = END_DATE - pd.DateOffset(months=MONTHS-1)
-DATES = pd.date_range(start=START_DATE, periods=MONTHS, freq='MS')
+CONTROL_DESCRIPTIONS = {
+    'GvP-01': 'Cybersecurity strategy defined and approved.',
+    'GvP-02': 'Roles & responsibilities for security are clear.',
+    'GvP-03': 'CISO reports to executive management.',
+    'GvP-04': 'Regular security reviews by leadership.',
+    'RM-01': 'Regular cybersecurity risk assessments conducted.',
+    'RM-02': 'Risk register is actively maintained.',
+    'RM-03': 'Risk treatment plans are documented and tracked.',
+    'ACM-01': 'Inventory of IT assets is complete.',
+    'ACM-02': 'Inventory of OT assets is complete.',
+    'ACM-03': 'Configuration baselines are enforced.',
+    'ACM-04': 'Unmanaged devices are detected & controlled.',
+    'AC-01': 'User access reviews are performed quarterly.',
+    'AC-02': 'Privileged access is strictly controlled.',
+    'AC-03': 'Multi-factor authentication is enforced.',
+    'NS-01': 'Network architecture is documented.',
+    'NS-02': 'Critical OT networks are segmented from IT.',
+    'NS-03': 'Firewall rules are regularly audited.',
+    'NS-04': 'Wireless networks are secured.',
+    'VPM-01': 'Vulnerability scanning is performed regularly.',
+    'VPM-02': 'Patch management process is defined and followed.',
+    'VPM-03': 'Critical patches are deployed within SLA.',
+    'SDC-01': 'Secure coding principles are defined.',
+    'SDC-02': 'Application security testing is integrated.',
+    'SDC-03': 'Changes are reviewed and approved.',
+    'LMD-01': 'Centralized logging is implemented.',
+    'LMD-02': 'Security events are monitored 24/7 (SOC).',
+    'LMD-03': 'Key security events trigger alerts.',
+    'LMD-04': 'Threat intelligence is consumed.',
+    'LMD-05': 'Endpoint Detection & Response (EDR) is deployed.',
+    'IRR-01': 'Incident response plan is documented & tested.',
+    'IRR-02': 'Incidents are classified and reported.',
+    'IRR-03': 'Lessons learned from incidents are documented.',
+    'BCDR-01': 'Business continuity plan is documented.',
+    'BCDR-02': 'Disaster recovery plan is documented.',
+    'BCDR-03': 'Plans are tested periodically.',
+    'BRV-01': 'Backups are performed routinely.',
+    'BRV-02': 'Backup restores are tested monthly.',
+    'STP-01': 'Third-party risk assessments are conducted.',
+    'STP-02': 'Security clauses are in contracts.',
+    'STP-03': 'Supplier performance is monitored.',
+    'SAP-01': 'Security awareness training is mandatory.',
+    'SAP-02': 'Phishing simulation campaigns are run.',
+    'PS-01': 'Physical access to plants is controlled.',
+    'PS-02': 'CCTV is deployed and monitored.',
+    'PS-03': 'Visitor policies are enforced.',
+    'CSS-01': 'Cloud security posture is managed.',
+    'CSS-02': 'SaaS applications are vetted.',
+    'CSS-03': 'Cloud infrastructure is monitored.'
+}
 
-# -----------------------------
-# Data generation (synthetic)
-# -----------------------------
+# NIS2 Mandatory Controls (examples)
+MANDATORY_CONTROLS = {
+    'GvP-01', 'RM-01', 'ACM-02', 'AC-03', 'NS-02', 'VPM-03', 'IRR-01', 'BCDR-01',
+    'BRV-02', 'STP-01', 'SAP-02', 'PS-01', 'CSS-01', 'LMD-02', 'LMD-05'
+}
+
+# Data generation parameters
+START_DATE = datetime.now() - timedelta(days=365)
+MONTHS = pd.date_range(start=START_DATE, periods=12, freq='MS')
+TOTAL_CONTROLS = sum(len(ids) for ids in CONTROL_DOMAINS.values())
+
 @st.cache_data
-def generate_controls_taxonomy() -> pd.DataFrame:
-    rows = []
-    ctrl_id = 1
-    for domain in CONTROL_DOMAINS:
-        for i in range(1, 5):
-            rows.append({
-                'control_id': f'C{ctrl_id:03d}',
-                'domain': domain,
-                'control_name': f"{domain} - Control {i}",
-                'mandatory': np.random.choice([True, False], p=[0.45, 0.55])
+def generate_data():
+    """
+    Generates a synthetic dataset for NIS2 KPIs and CMMI maturity.
+    """
+    data_points = []
+    kpi_data = []
+
+    # Assign plant maturity profiles
+    plant_profiles = {
+        'leader': ['Modena', 'Rüsselsheim', 'Poissy', 'Trnava'],
+        'mid-pack': [p for p in PLANTS if p not in ['Modena', 'Rüsselsheim', 'Poissy', 'Trnava', 'Mulhouse', 'Madrid', 'Kragujevac', 'Bursa (Tofaş JV)']],
+        'laggard': ['Mulhouse', 'Madrid', 'Kragujevac', 'Bursa (Tofaş JV)']
+    }
+
+    # Generate control maturity data
+    for month in MONTHS:
+        for plant in PLANTS:
+            profile = next(key for key, value in plant_profiles.items() if plant in value)
+            
+            for domain, control_ids in CONTROL_DOMAINS.items():
+                for control_id in control_ids:
+                    
+                    # Base maturity varies by profile
+                    if profile == 'leader':
+                        base_maturity = np.random.uniform(3.5, 4.2)
+                    elif profile == 'mid-pack':
+                        base_maturity = np.random.uniform(2.5, 3.5)
+                    else: # laggard
+                        base_maturity = np.random.uniform(1.0, 2.5)
+                    
+                    # Introduce modest upward trend and randomness
+                    month_index = (month.year - START_DATE.year) * 12 + (month.month - START_DATE.month)
+                    drift = month_index * np.random.uniform(0.01, 0.05)
+                    
+                    cmmi_maturity = min(5.0, base_maturity + drift + np.random.uniform(-0.3, 0.3))
+                    
+                    data_points.append({
+                        'Month': month,
+                        'Plant': plant,
+                        'Domain': domain,
+                        'Control ID': control_id,
+                        'Control Name': CONTROL_DESCRIPTIONS[control_id],
+                        'CMMI Maturity': cmmi_maturity,
+                        'Mandatory': control_id in MANDATORY_CONTROLS
+                    })
+    
+    # Generate operational KPI data
+    for month in MONTHS:
+        for plant in PLANTS:
+            profile = next(key for key, value in plant_profiles.items() if plant in value)
+            
+            # Correlate ops KPIs with maturity profile
+            if profile == 'leader':
+                mttd = max(2, np.random.normal(5, 2))
+                mttr = max(0.5, np.random.normal(1.5, 0.5))
+                patch_sla = np.random.normal(95, 2)
+                vuln_backlog = np.random.normal(50, 20)
+                phishing_fail = np.random.normal(3, 1)
+                backup_pass = np.random.normal(98, 1)
+                third_party_cov = np.random.normal(90, 3)
+                ot_inventory = np.random.normal(95, 2)
+                ics_segmentation = np.random.normal(90, 3)
+                incident_rate = np.random.normal(0.5, 0.2)
+            elif profile == 'mid-pack':
+                mttd = np.random.normal(12, 5)
+                mttr = np.random.normal(3, 1)
+                patch_sla = np.random.normal(85, 5)
+                vuln_backlog = np.random.normal(200, 50)
+                phishing_fail = np.random.normal(8, 3)
+                backup_pass = np.random.normal(90, 5)
+                third_party_cov = np.random.normal(75, 5)
+                ot_inventory = np.random.normal(85, 5)
+                ics_segmentation = np.random.normal(70, 8)
+                incident_rate = np.random.normal(2, 0.5)
+            else: # laggard
+                mttd = np.random.normal(30, 10)
+                mttr = np.random.normal(8, 3)
+                patch_sla = np.random.normal(70, 10)
+                vuln_backlog = np.random.normal(500, 100)
+                phishing_fail = np.random.normal(15, 5)
+                backup_pass = np.random.normal(80, 8)
+                third_party_cov = np.random.normal(50, 10)
+                ot_inventory = np.random.normal(70, 10)
+                ics_segmentation = np.random.normal(50, 10)
+                incident_rate = np.random.normal(5, 2)
+            
+            # Ensure values are within reasonable bounds
+            kpi_data.append({
+                'Month': month,
+                'Plant': plant,
+                'MTTD (hours)': max(2, min(mttd, 48)),
+                'MTTR (days)': max(0.5, min(mttr, 14)),
+                'Patch SLA Adherence (%)': max(55, min(patch_sla, 98)),
+                'Vulnerability Backlog (count >30 days)': max(20, min(vuln_backlog, 800)),
+                'Phishing Failure Rate (%)': max(2, min(phishing_fail, 18)),
+                'Backup Restore Test Pass Rate (%)': max(70, min(backup_pass, 100)),
+                'Third-Party Assessment Coverage (%)': max(40, min(third_party_cov, 95)),
+                'OT Asset Inventory Completeness (%)': max(50, min(ot_inventory, 98)),
+                'ICS/OT Segmentation Coverage (%)': max(30, min(ics_segmentation, 95)),
+                'Incident Rate (per 1,000 endpoints)': max(0.1, min(incident_rate, 10))
             })
-            ctrl_id += 1
-    return pd.DataFrame(rows)
 
-@st.cache_data
-def _plant_baseline(plant_name: str) -> float:
-    leaders = {"Mirafiori","Modena","Rennes","Mulhouse","Eisenach","Madrid"}
-    laggards = {"Kragujevac","Tychy","Gliwice","Kolín","Bursa (Tofaş JV)","Hordain (Sevelnord)"}
-    if plant_name in leaders:
-        return np.random.uniform(3.0, 4.2)
-    if plant_name in laggards:
-        return np.random.uniform(1.2, 2.2)
-    return np.random.uniform(2.3, 3.5)
+    controls_df = pd.DataFrame(data_points)
+    kpis_df = pd.DataFrame(kpi_data)
+    
+    return controls_df, kpis_df
 
-@st.cache_data
-def generate_maturity_timeseries(controls_df: pd.DataFrame) -> pd.DataFrame:
-    records = []
-    for plant in PLANTS:
-        base = _plant_baseline(plant)
-        plant_drift = np.random.normal(0.02, 0.07)
-        for _, ctrl in controls_df.iterrows():
-            ctrl_diff = np.random.normal(0, 0.45)
-            for month_idx, date in enumerate(DATES):
-                season = 0.08 * np.sin(2 * np.pi * month_idx / 12)
-                noise = np.random.normal(0, 0.18)
-                maturity = base + ctrl_diff + plant_drift * month_idx + season + noise
-                maturity = float(min(max(maturity, 0.0), 5.0))
-                records.append({
-                    'plant': plant,
-                    'control_id': ctrl['control_id'],
-                    'control_name': ctrl['control_name'],
-                    'domain': ctrl['domain'],
-                    'mandatory': ctrl['mandatory'],
-                    'date': date,
-                    'cmmi': round(maturity, 2)
-                })
-    return pd.DataFrame.from_records(records)
+# --- 2. KPI CALCULATORS ---
 
-@st.cache_data
-def generate_operational_metrics(maturity_df: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    agg = maturity_df.groupby(['plant','date'])['cmmi'].mean().reset_index().rename(columns={'cmmi':'avg_cmmi'})
-    for _, r in agg.iterrows():
-        avg = r['avg_cmmi']
-        # Governance
-        pct_senior_trained = min(100, max(10, np.random.normal(50 + (avg-2.5)*12, 10)))
-        time_ack_assign_hours = max(1, np.random.normal(48 - (avg-2.5)*6, 12))
-        cyber_budget_pct = min(100, max(1, np.random.normal(7 + (avg-2.5)*4, 2)))
-        crisis_plans_tested = max(0, int(np.random.poisson(1 + (avg-2.5)*0.6)))
-        # Supply chain
-        supplier_contractual_compliance_pct = min(100, max(10, np.random.normal(55 + (avg-2.5)*12, 10)))
-        supplier_assessed_pct = min(100, max(5, np.random.normal(48 + (avg-2.5)*14, 12)))
-        supplier_mttd_remediate_days = max(1, np.random.normal(20 - (avg-2.5)*3, 4))
-        supplier_incidents_cnt = int(max(0, np.random.poisson(0.4 - (avg-2.5)*0.05)))
-        # Assets & Vulnerability
-        pct_assets_discovered = min(100, max(12, np.random.normal(60 + (avg-2.5)*15, 12)))
-        mttd_vuln_scan_hours = max(1, np.random.normal(72 - (avg-2.5)*10, 15))
-        mttr_critical_vuln_days = max(0.2, np.random.normal(14 - (avg-2.5)*2.8, 3))
-        ot_segmentation_coverage_pct = min(100, max(5, np.random.normal(45 + (avg-2.5)*14, 12)))
-        # Incident Response
-        mttd_incident_hours = max(0.5, np.random.normal(24 - (avg-2.5)*4.5, 8))
-        mttr_contain_hours = max(0.1, np.random.normal(48 - (avg-2.5)*6, 12))
-        mttr_recover_hours = max(1, np.random.normal(72 - (avg-2.5)*8, 18))
-        pct_reported_within_24h = min(100, max(0, np.random.normal(58 + (avg-2.5)*18, 18)))
-        unplanned_downtime_hours = max(0, np.random.normal(40 - (avg-2.5)*9, 30))
-        # Awareness
-        pct_employees_trained = min(100, max(20, np.random.normal(62 + (avg-2.5)*12, 12)))
-        phishing_failure_rate = max(0.1, np.random.normal(12 - (avg-2.5)*2.8, 3))
-        incidents_employee_error_cnt = int(max(0, np.random.poisson(1.2 - (avg-2.5)*0.12)))
-        # Product Security
-        pct_new_models_tara = min(100, max(0, np.random.normal(50 + (avg-2.5)*18, 18)))
-        time_vuln_to_patch_days = max(0.5, np.random.normal(30 - (avg-2.5)*6, 8))
-        pct_fleet_ota_patchable = min(100, max(0, np.random.normal(48 + (avg-2.5)*15, 15)))
-        successful_pentest_count = int(max(0, np.random.poisson(1 + (avg-2.5)*0.6)))
-        # legacy ops
-        mttd_alarm = max(0.5, np.random.normal(48 - avg*8, 6))
-        mttr_ops = max(0.2, np.random.normal(10 - avg*1.5, 1.2))
-        patch_sla = min(99.5, max(40, np.random.normal(60 + (avg-2.5)*12, 8)))
-        vuln_backlog = int(max(0, np.random.normal(400 - avg*70, 80)))
-        backup_pass = min(100, max(40, np.random.normal(78 + (avg-2.5)*8, 6)))
-        rows.append({
-            'plant': r['plant'],
-            'date': r['date'],
-            # Governance
-            'Pct_Senior_Mgmt_Trained_pct': round(float(pct_senior_trained),2),
-            'Time_to_Ack_Assign_New_Risks_hours': round(float(time_ack_assign_hours),2),
-            'Cybersecurity_Budget_pct_of_IT_OT': round(float(cyber_budget_pct),2),
-            'Num_Cyber_Crisis_Plans_Tested': int(crisis_plans_tested),
-            # Supply chain
-            'Supplier_Contractual_Compliance_pct': round(float(supplier_contractual_compliance_pct),2),
-            'Supplier_Assessed_pct': round(float(supplier_assessed_pct),2),
-            'Supplier_MTTD_Remediate_Critical_days': round(float(supplier_mttd_remediate_days),2),
-            'Supplier_Incidents_cnt': int(supplier_incidents_cnt),
-            # Assets & vuln
-            'Pct_Assets_Discovered_Classified_pct': round(float(pct_assets_discovered),2),
-            'MTTD_Vuln_Scan_hours': round(float(mttd_vuln_scan_hours),2),
-            'MTTR_Critical_Vuln_days': round(float(mttr_critical_vuln_days),2),
-            'OT_Segmentation_Coverage_pct': round(float(ot_segmentation_coverage_pct),2),
-            # Incident Response
-            'MTTD_Incident_hours': round(float(mttd_incident_hours),2),
-            'MTTR_Contain_hours': round(float(mttr_contain_hours),2),
-            'MTTR_Recovery_hours': round(float(mttr_recover_hours),2),
-            'Pct_Reported_within_24h_pct': round(float(pct_reported_within_24h),2),
-            'Unplanned_Downtime_hours': round(float(unplanned_downtime_hours),2),
-            # Awareness
-            'Pct_Employees_Trained_pct': round(float(pct_employees_trained),2),
-            'Phishing_Failure_pct': round(float(phishing_failure_rate),2),
-            'Incidents_Employee_Error_cnt': int(incidents_employee_error_cnt),
-            # Product Security
-            'Pct_New_Models_TARA_pct': round(float(pct_new_models_tara),2),
-            'Time_Vuln_to_Patch_days': round(float(time_vuln_to_patch_days),2),
-            'Pct_Fleet_OTA_Patchable_pct': round(float(pct_fleet_ota_patchable),2),
-            'Successful_Pentest_Count': int(successful_pentest_count),
-            # legacy ops
-            'avg_cmmi': round(avg,2),
-            'MTTD_hours': round(float(mttd_alarm),2),
-            'MTTR_days': round(float(mttr_ops),2),
-            'Patch_SLA_pct': round(float(patch_sla),2),
-            'Vuln_Backlog_cnt': int(vuln_backlog),
-            'Backup_Restore_Pass_pct': round(float(backup_pass),2)
-        })
-    return pd.DataFrame(rows)
-
-# -----------------------------
-# KPI computations
-# -----------------------------
-
-def compute_kpis(maturity_df: pd.DataFrame, ops_df: pd.DataFrame, plants_filter=None, start_date=None, end_date=None):
-    df = maturity_df.copy()
-    if plants_filter:
-        df = df[df['plant'].isin(plants_filter)]
-    if start_date:
-        df = df[df['date'] >= pd.to_datetime(start_date)]
-    if end_date:
-        df = df[df['date'] <= pd.to_datetime(end_date)]
-    df['mandatory_weight'] = df['mandatory'].apply(lambda x: 2 if x else 1)
-    df['compliant'] = (df['cmmi'] >= 3.0).astype(int)
-    df['weighted_compliant'] = df['compliant'] * df['mandatory_weight']
-    df['weighted_total'] = df['mandatory_weight']
-
-    latest = df['date'].max()
-    snapshot = df[df['date'] == latest]
-    comp_score = snapshot['weighted_compliant'].sum() / snapshot['weighted_total'].sum() * 100
-    avg_maturity = snapshot['cmmi'].mean()
-    crit_coverage = snapshot[snapshot['mandatory']]['compliant'].sum() / snapshot[snapshot['mandatory']].shape[0] * 100
-
-    # ops aggregation
-    ops = ops_df.copy()
-    if plants_filter:
-        ops = ops[ops['plant'].isin(plants_filter)]
-    if start_date:
-        ops = ops[ops['date'] >= pd.to_datetime(start_date)]
-    if end_date:
-        ops = ops[ops['date'] <= pd.to_datetime(end_date)]
-    ops_latest = ops[ops['date'] == ops['date'].max()]
-
-    def avg(name):
-        return ops_latest[name].mean() if name in ops_latest.columns and not ops_latest.empty else np.nan
-
-    portfolio = {
-        'NIS2_Compliance_pct': round(float(comp_score),2),
-        'Avg_Maturity': round(float(avg_maturity),2),
-        'Critical_Coverage_pct': round(float(crit_coverage),2),
-        # governance
-        'Pct_Senior_Mgmt_Trained_pct': round(avg('Pct_Senior_Mgmt_Trained_pct'),2),
-        'Time_to_Ack_Assign_New_Risks_hours': round(avg('Time_to_Ack_Assign_New_Risks_hours'),2),
-        'Cybersecurity_Budget_pct_of_IT_OT': round(avg('Cybersecurity_Budget_pct_of_IT_OT'),2),
-        'Num_Cyber_Crisis_Plans_Tested': int(np.nanmean(ops_latest['Num_Cyber_Crisis_Plans_Tested'])) if 'Num_Cyber_Crisis_Plans_Tested' in ops_latest.columns else 0,
-        # supply
-        'Supplier_Contractual_Compliance_pct': round(avg('Supplier_Contractual_Compliance_pct'),2),
-        'Supplier_Assessed_pct': round(avg('Supplier_Assessed_pct'),2),
-        'Supplier_MTTD_Remediate_Critical_days': round(avg('Supplier_MTTD_Remediate_Critical_days'),2),
-        'Supplier_Incidents_cnt': int(np.nansum(ops_latest['Supplier_Incidents_cnt'])) if 'Supplier_Incidents_cnt' in ops_latest.columns else 0,
-        # assets
-        'Pct_Assets_Discovered_Classified_pct': round(avg('Pct_Assets_Discovered_Classified_pct'),2),
-        'MTTD_Vuln_Scan_hours': round(avg('MTTD_Vuln_Scan_hours'),2),
-        'MTTR_Critical_Vuln_days': round(avg('MTTR_Critical_Vuln_days'),2),
-        'OT_Segmentation_Coverage_pct': round(avg('OT_Segmentation_Coverage_pct'),2),
-        # incident
-        'MTTD_Incident_hours': round(avg('MTTD_Incident_hours'),2),
-        'MTTR_Contain_hours': round(avg('MTTR_Contain_hours'),2),
-        'MTTR_Recovery_hours': round(avg('MTTR_Recovery_hours'),2),
-        'Pct_Reported_within_24h_pct': round(avg('Pct_Reported_within_24h_pct'),2),
-        'Unplanned_Downtime_hours': round(avg('Unplanned_Downtime_hours'),2),
-        # awareness
-        'Pct_Employees_Trained_pct': round(avg('Pct_Employees_Trained_pct'),2),
-        'Phishing_Failure_pct': round(avg('Phishing_Failure_pct'),2),
-        'Incidents_Employee_Error_cnt': int(np.nansum(ops_latest['Incidents_Employee_Error_cnt'])) if 'Incidents_Employee_Error_cnt' in ops_latest.columns else 0,
-        # product
-        'Pct_New_Models_TARA_pct': round(avg('Pct_New_Models_TARA_pct'),2),
-        'Time_Vuln_to_Patch_days': round(avg('Time_Vuln_to_Patch_days'),2),
-        'Pct_Fleet_OTA_Patchable_pct': round(avg('Pct_Fleet_OTA_Patchable_pct'),2),
-        'Successful_Pentest_Count': int(np.nansum(ops_latest['Successful_Pentest_Count'])) if 'Successful_Pentest_Count' in ops_latest.columns else 0
-    }
-
-    # heatmap
-    heatmap_df = snapshot.groupby(['plant','domain'])['cmmi'].mean().reset_index().pivot(index='plant', columns='domain', values='cmmi').fillna(0)
-    # top/bottom controls
-    control_avg = snapshot.groupby(['control_id','control_name'])['cmmi'].mean().reset_index()
-    top5 = control_avg.sort_values('cmmi', ascending=False).head(5)
-    bot5 = control_avg.sort_values('cmmi', ascending=True).head(5)
-    # trend
-    month_agg = df.copy()
-    month_agg['weighted_compliant'] = month_agg['compliant'] * month_agg['mandatory_weight']
-    trends = month_agg.groupby('date').agg({'weighted_compliant':'sum','weighted_total':'sum'}).reset_index()
-    trends['compliance_pct'] = trends['weighted_compliant'] / trends['weighted_total'] * 100
-
+def calculate_kpis(df):
+    """
+    Calculates portfolio-level NIS2 KPIs from the controls dataframe.
+    """
+    if df.empty:
+        return {
+            'nis2_compliance': 0, 'avg_maturity': 0,
+            'critical_coverage': 0, 'maturity_dist': [0,0,0,0,0]
+        }
+    
+    # Calculate NIS2 Compliance Score
+    df['Weighted CMMI'] = df['CMMI Maturity']
+    df.loc[df['Mandatory'], 'Weighted CMMI'] *= 2
+    
+    compliant_weighted_count = df.loc[df['Weighted CMMI'] >= 3.0].shape[0]
+    total_weighted_count = df.shape[0] * 1.0  # Simple non-mandatory weight
+    total_weighted_count += df['Mandatory'].sum() * 1.0 # Add extra weight for mandatory
+    
+    nis2_compliance = (compliant_weighted_count / total_weighted_count) * 100
+    
+    # Calculate Average Maturity
+    avg_maturity = df['CMMI Maturity'].mean()
+    
+    # Calculate Critical Control Coverage
+    critical_df = df[df['Mandatory']]
+    if not critical_df.empty:
+        critical_coverage = (critical_df[critical_df['CMMI Maturity'] >= 3.0].shape[0] / critical_df.shape[0]) * 100
+    else:
+        critical_coverage = 0
+    
+    # Calculate Maturity Distribution
+    bins = [0, 1.99, 2.99, 3.99, 4.99, 5.0]
+    labels = ['0-1', '2', '3', '4', '5']
+    maturity_dist = pd.cut(df['CMMI Maturity'], bins=bins, labels=labels, right=False).value_counts(normalize=True).sort_index() * 100
+    
     return {
-        'portfolio': portfolio,
-        'heatmap_df': heatmap_df,
-        'top5': top5,
-        'bot5': bot5,
-        'trends': trends
+        'nis2_compliance': nis2_compliance,
+        'avg_maturity': avg_maturity,
+        'critical_coverage': critical_coverage,
+        'maturity_dist': maturity_dist.to_dict()
     }
 
-# -----------------------------
-# Utilities
-# -----------------------------
+# --- 3. REUSABLE PLOTTING FUNCTIONS ---
 
-def to_excel_bytes(df: pd.DataFrame) -> bytes:
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='export')
-    return output.getvalue()
-
-# small helper: plotly gauge
-def plot_gauge(value: float, title: str, suffix: str = '%') -> go.Figure:
-    fig = go.Figure(go.Indicator(
-        mode='gauge+number',
-        value=value,
-        domain={'x': [0, 1], 'y': [0, 1]},
-        title={'text': title},
-        gauge={
-            'axis': {'range': [0, 100]},
-            'bar': {'color': 'darkblue'},
-            'steps': [
-                {'range': [0, 50], 'color': 'red'},
-                {'range': [50, 75], 'color': 'yellow'},
-                {'range': [75, 100], 'color': 'green'}
-            ]
-        },
-        number={'suffix': suffix}
-    ))
-    fig.update_layout(height=240, margin={'t':30,'b':0,'l':0,'r':0})
+def plot_kpi_trend(df, kpi_col, title):
+    """Plots a trend line for a given KPI."""
+    fig = px.line(
+        df.groupby('Month')[kpi_col].mean().reset_index(),
+        x='Month', y=kpi_col,
+        title=title, markers=True
+    )
+    fig.update_layout(xaxis_title='Month', yaxis_title=kpi_col, template='plotly_white')
     return fig
 
-# -----------------------------
-# Streamlit app
-# -----------------------------
+def create_heatmap(df):
+    """Creates a heatmap of CMMI maturity by Plant and Domain."""
+    heatmap_data = df.groupby(['Plant', 'Domain'])['CMMI Maturity'].mean().reset_index()
+    fig = px.density_heatmap(
+        heatmap_data, x='Domain', y='Plant', z='CMMI Maturity',
+        title='NIS2 Maturity Heatmap (Plants vs. Domains)',
+        color_continuous_scale=px.colors.sequential.YlGnBu,
+        text_auto=".2f",
+    )
+    fig.update_layout(
+        xaxis={'tickangle': -45, 'title_text': ''},
+        yaxis_title='Plant',
+        coloraxis_colorbar_title_text='CMMI'
+    )
+    return fig
 
-def main():
-    st.set_page_config(page_title='NIS2 Dashboard — Improved UX', layout='wide')
-    st.title('NIS2 Control Maturity — Usability-Driven Dashboard')
-    st.markdown('Tabs for each domain, compact KPI cards, interactive charts, and methodology expanders.')
+def create_radar_chart(df, plant_name):
+    """Creates a radar chart for a single plant's domain-level maturity."""
+    domain_maturity = df.groupby('Domain')['CMMI Maturity'].mean().reset_index()
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=domain_maturity['CMMI Maturity'],
+        theta=domain_maturity['Domain'],
+        fill='toself',
+        name=plant_name,
+        hovertemplate='<b>Domain:</b> %{theta}<br><b>Maturity:</b> %{r:.2f}<extra></extra>'
+    ))
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, 5])
+        ),
+        title=f'Maturity Profile for {plant_name}',
+        showlegend=False
+    )
+    return fig
 
-    controls = generate_controls_taxonomy()
-    maturity = generate_maturity_timeseries(controls)
-    ops = generate_operational_metrics(maturity)
+def create_top_bottom_bar_chart(df, title, top_n=5, ascending=True):
+    """Creates a bar chart for top or bottom N controls."""
+    grouped = df.groupby(['Control ID', 'Control Name'])['CMMI Maturity'].mean().reset_index()
+    grouped = grouped.sort_values(by='CMMI Maturity', ascending=ascending).head(top_n)
+    
+    fig = px.bar(
+        grouped,
+        x='CMMI Maturity', y='Control Name', orientation='h',
+        title=title,
+        color='CMMI Maturity',
+        color_continuous_scale=px.colors.sequential.YlGnBu
+    )
+    fig.update_layout(yaxis={'categoryorder': 'total ascending' if ascending else 'total descending'})
+    return fig
 
-    # sidebar filters
-    st.sidebar.header('Filters')
-    selected_plants = st.sidebar.multiselect('Plants (multi-select)', options=PLANTS, default=[PLANTS[0]])
-    date_range = st.sidebar.date_input('Date range', value=(DATES.min().date(), DATES.max().date()), min_value=DATES.min().date(), max_value=DATES.max().date())
-    start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+# --- 4. STREAMLIT APP LAYOUT & PAGES ---
 
-    # apply filters
-    mat_filtered = maturity[(maturity['date'] >= start_date) & (maturity['date'] <= end_date)]
-    ops_filtered = ops[(ops['date'] >= start_date) & (ops['date'] <= end_date)]
-    if selected_plants:
-        mat_filtered = mat_filtered[mat_filtered['plant'].isin(selected_plants)]
-        ops_filtered = ops_filtered[ops_filtered['plant'].isin(selected_plants)]
+st.set_page_config(layout="wide", page_title="NIS2 Dashboard")
 
-    # compute KPIs
-    kpi_data = compute_kpis(mat_filtered, ops_filtered, plants_filter=selected_plants, start_date=start_date, end_date=end_date)
-    portfolio = kpi_data['portfolio']
+# Load data with caching
+controls_df, kpis_df = generate_data()
 
-    tabs = st.tabs(['Overview','Governance & Risk','Supply Chain','Assets & Vulnerabilities','Incident Response','Awareness','Product Security','Control Maturity'])
+st.title("NIS2 Implementation Dashboard")
+st.markdown("### Portfolio & Plant-Level Visibility for Cybersecurity Maturity & Operations")
+st.write("This dashboard provides a simulated view of cybersecurity performance aligned with NIS2 controls, offering insights for CISOs, Plant Managers, and GRC stakeholders.")
 
-    # Overview
-    with tabs[0]:
-        st.subheader('Executive Snapshot')
-        c1, c2 = st.columns([2,3])
-        with c1:
-            # big compliance gauge
-            fig_g = plot_gauge(portfolio['NIS2_Compliance_pct'] if portfolio['NIS2_Compliance_pct'] is not None else 0, 'NIS2 Compliance (weighted)')
-            st.plotly_chart(fig_g, use_container_width=True)
-            st.metric('Avg Control Maturity (0-5)', f"{portfolio['Avg_Maturity']}")
-            st.metric('Critical Controls Coverage (%)', f"{portfolio['Critical_Coverage_pct']}%")
+# --- Sidebar Filters ---
+st.sidebar.header("Filter & Navigation")
 
-        with c2:
-            st.markdown('**Portfolio heatmap — avg CMMI by plant & domain**')
-            heatmap_df = kpi_data['heatmap_df'].reset_index().melt(id_vars='plant', var_name='domain', value_name='cmmi')
-            fig_hm = px.imshow(kpi_data['heatmap_df'], aspect='auto', origin='lower', color_continuous_scale='RdYlGn', labels=dict(x='Domain', y='Plant'))
-            fig_hm.update_layout(height=420)
-            st.plotly_chart(fig_hm, use_container_width=True)
+page = st.sidebar.radio("Go to", ["Overview", "Plant Drill-Down", "Control Drill-Down"])
 
-        st.markdown('**Trends: compliance (12 months)**')
-        tr = kpi_data['trends']
-        fig_tr = px.line(tr, x='date', y='compliance_pct', markers=True)
-        fig_tr.update_layout(yaxis_title='Compliance (%)')
-        st.plotly_chart(fig_tr, use_container_width=True)
+if page in ["Overview", "Plant Drill-Down"]:
+    selected_plant = st.sidebar.selectbox(
+        "Select a Plant (for Plant Drill-Down)",
+        ['All Plants'] + sorted(PLANTS)
+    )
+else:
+    selected_plant = 'All Plants'
 
-        cols_tb = st.columns(2)
-        cols_tb[0].subheader('Top 5 Controls by maturity')
-        cols_tb[0].table(kpi_data['top5'])
-        cols_tb[1].subheader('Bottom 5 Controls by maturity')
-        cols_tb[1].table(kpi_data['bot5'])
+date_range = st.sidebar.slider(
+    "Select Date Range (Months)",
+    min_value=0, max_value=11, value=(0, 11)
+)
+start_month, end_month = MONTHS[date_range[0]], MONTHS[date_range[1]]
 
-    # Governance & Risk Tab
-    with tabs[1]:
-        st.subheader('Governance & Risk')
-        g = portfolio
-        cols = st.columns(4)
-        cols[0].metric('% Senior Mgmt Trained', f"{g['Pct_Senior_Mgmt_Trained_pct']}%")
-        cols[1].metric('Time to Ack/Assign Risks (hrs)', f"{g['Time_to_Ack_Assign_New_Risks_hours']}")
-        cols[2].metric('Cybersecurity Budget % of IT/OT', f"{g['Cybersecurity_Budget_pct_of_IT_OT']}%")
-        cols[3].metric('Crisis Plans Tested', f"{g['Num_Cyber_Crisis_Plans_Tested']}")
+# Filter dataframes based on user selections
+filtered_controls_df = controls_df[
+    (controls_df['Month'] >= start_month) &
+    (controls_df['Month'] <= end_month)
+]
+filtered_kpis_df = kpis_df[
+    (kpis_df['Month'] >= start_month) &
+    (kpis_df['Month'] <= end_month)
+]
 
-        # visual: bar showing training and budget
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=['Senior Trained %'], y=[g['Pct_Senior_Mgmt_Trained_pct']], name='Senior Trained'))
-        fig.add_trace(go.Bar(x=['Cyber Budget %'], y=[g['Cybersecurity_Budget_pct_of_IT_OT']], name='Cyber Budget'))
-        fig.update_layout(barmode='group', yaxis=dict(range=[0,100]), height=300)
-        st.plotly_chart(fig, use_container_width=True)
+if selected_plant != 'All Plants':
+    filtered_controls_df = filtered_controls_df[filtered_controls_df['Plant'] == selected_plant]
+    filtered_kpis_df = filtered_kpis_df[filtered_kpis_df['Plant'] == selected_plant]
 
-        with st.expander('Methodology & Data Requirements'):
-            st.write('- % Senior Management Trained: HR/LMS export with role mapping.
-- Time to Acknowledge/Assign: timestamps from risk register workflow.
-- Cybersecurity budget: financial ledger tagging between cybersecurity and total IT/OT spend.
-- Crisis plans: documented plans + test evidence (date, outcome).')
+# --- Page Logic ---
 
-    # Supply Chain Tab
-    with tabs[2]:
-        st.subheader('Supply Chain & Third-Party Risk')
-        s = portfolio
-        scols = st.columns(4)
-        scols[0].metric('% Suppliers Contractually Compliant', f"{s['Supplier_Contractual_Compliance_pct']}%")
-        scols[1].metric('% Suppliers Assessed (12m)', f"{s['Supplier_Assessed_pct']}%")
-        scols[2].metric('Supplier MTTD Remediate (days)', f"{s['Supplier_MTTD_Remediate_Critical_days']}")
-        scols[3].metric('Supplier-origin incidents', f"{s['Supplier_Incidents_cnt']}")
+if page == "Overview":
+    st.subheader("Portfolio Overview")
+    
+    # Calculate portfolio-level KPIs
+    portfolio_kpis = calculate_kpis(filtered_controls_df)
+    
+    # KPI Cards
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    
+    with col1:
+        st.metric(
+            label="NIS2 Compliance Score",
+            value=f"{portfolio_kpis['nis2_compliance']:.1f}%",
+            help="Percentage of controls with CMMI ≥ 3.0, with mandatory controls weighted 2x."
+        )
+    with col2:
+        st.metric(
+            label="Average Control Maturity",
+            value=f"{portfolio_kpis['avg_maturity']:.2f}",
+            help="Average CMMI maturity score across all controls and plants."
+        )
+    with col3:
+        st.metric(
+            label="Critical Control Coverage",
+            value=f"{portfolio_kpis['critical_coverage']:.1f}%",
+            help="Percentage of mandatory controls with CMMI ≥ 3.0."
+        )
+    with col4:
+        st.metric(
+            label="Avg. Patch SLA Adherence",
+            value=f"{filtered_kpis_df['Patch SLA Adherence (%)'].mean():.1f}%",
+            help="Average percentage of critical vulnerabilities remediated within policy window."
+        )
+    with col5:
+        st.metric(
+            label="Avg. MTTD (hours)",
+            value=f"{filtered_kpis_df['MTTD (hours)'].mean():.1f}",
+            help="Mean Time to Detect an incident."
+        )
+    with col6:
+        st.metric(
+            label="Avg. MTTR (days)",
+            value=f"{filtered_kpis_df['MTTR (days)'].mean():.1f}",
+            help="Mean Time to Respond and Recover from an incident."
+        )
 
-        # visual: supplier coverage gauge and timeline
-        fig_sup = plot_gauge(s['Supplier_Assessed_pct'] if s['Supplier_Assessed_pct'] is not None else 0, 'Suppliers Assessed (12m)')
-        st.plotly_chart(fig_sup, use_container_width=True)
+    st.markdown("---")
+    
+    # Visuals
+    col_vis1, col_vis2 = st.columns([2,1])
+    with col_vis1:
+        st.plotly_chart(create_heatmap(filtered_controls_df), use_container_width=True)
+    
+    with col_vis2:
+        maturity_dist_df = pd.DataFrame(
+            portfolio_kpis['maturity_dist'].items(),
+            columns=['Maturity Level', 'Percentage']
+        )
+        fig_dist = px.bar(
+            maturity_dist_df, x='Maturity Level', y='Percentage',
+            title='Portfolio-wide Maturity Distribution',
+            color='Maturity Level',
+            color_discrete_sequence=px.colors.sequential.YlGnBu
+        )
+        fig_dist.update_layout(yaxis_title="Percentage (%)")
+        st.plotly_chart(fig_dist, use_container_width=True)
+        
+        st.plotly_chart(plot_kpi_trend(filtered_controls_df, 'CMMI Maturity', 'Avg. Maturity Trend (Last 12 Months)'), use_container_width=True)
 
-        with st.expander('Methodology & Data Requirements'):
-            st.write('- Supplier contractual compliance: contract metadata + clause scan.
-- Supplier assessment: questionnaires and audit evidence within 12 months.
-- MTTD remediation: supplier ticketing and patch validation timestamps.
-- Supplier incidents: incident ticket annotated with supplier origin.')
+    col_charts = st.columns(2)
+    with col_charts[0]:
+        st.plotly_chart(create_top_bottom_bar_chart(filtered_controls_df, 'Top 5 Controls by Maturity', ascending=False), use_container_width=True)
+    with col_charts[1]:
+        st.plotly_chart(create_top_bottom_bar_chart(filtered_controls_df, 'Bottom 5 Controls by Maturity', ascending=True), use_container_width=True)
 
-    # Assets & Vulnerabilities Tab
-    with tabs[3]:
-        st.subheader('Assets & Vulnerabilities')
-        a = portfolio
-        ac1, ac2, ac3, ac4 = st.columns(4)
-        ac1.metric('% Assets Discovered & Classified', f"{a['Pct_Assets_Discovered_Classified_pct']}%")
-        ac2.metric('MTTD Vuln Scan (hrs)', f"{a['MTTD_Vuln_Scan_hours']}")
-        ac3.metric('MTTR Critical Vuln (days)', f"{a['MTTR_Critical_Vuln_days']}")
-        ac4.metric('OT Segmentation Coverage', f"{a['OT_Segmentation_Coverage_pct']}%")
+    # Download button for the overview data
+    @st.cache_data
+    def convert_df_to_csv(df):
+        return df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download Full Data as CSV",
+        data=convert_df_to_csv(controls_df),
+        file_name="nis2_dashboard_data.csv",
+        mime="text/csv"
+    )
 
-        # visualize distribution of asset discovery across plants
-        asset_df = ops_filtered[['plant','Pct_Assets_Discovered_Classified_pct']].drop_duplicates()
-        fig_assets = px.bar(asset_df.sort_values('Pct_Assets_Discovered_Classified_pct', ascending=False), x='plant', y='Pct_Assets_Discovered_Classified_pct')
-        fig_assets.update_layout(xaxis_tickangle=45, height=350)
-        st.plotly_chart(fig_assets, use_container_width=True)
+elif page == "Plant Drill-Down":
+    st.subheader("Plant-Specific KPIs & Insights")
+    if selected_plant == 'All Plants':
+        st.warning("Please select a specific plant from the sidebar to view this page.")
+    else:
+        plant_kpis = calculate_kpis(filtered_controls_df)
+        
+        # KPI Cards for selected plant
+        st.write(f"### Performance for {selected_plant}")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            st.metric("NIS2 Compliance", f"{plant_kpis['nis2_compliance']:.1f}%")
+        with col2:
+            st.metric("Avg. Maturity", f"{plant_kpis['avg_maturity']:.2f}")
+        with col3:
+            st.metric("Avg. Patch SLA", f"{filtered_kpis_df['Patch SLA Adherence (%)'].mean():.1f}%")
+        with col4:
+            st.metric("MTTD (hours)", f"{filtered_kpis_df['MTTD (hours)'].mean():.1f}")
+        with col5:
+            st.metric("MTTR (days)", f"{filtered_kpis_df['MTTR (days)'].mean():.1f}")
 
-        with st.expander('Methodology & Data Requirements'):
-            st.write('- Asset discovery: results from CMDB/Discovery tools; classification mapping to critical/non-critical.
-- Vulnerability detection: scanner outputs (timestamped findings) and ingestion into tracking system.
-- MTTR critical: remediation ticket closure verified by rescans.
-- OT segmentation: network diagrams, firewall/zone rules evidence.')
+        st.markdown("---")
 
-    # Incident Response Tab
-    with tabs[4]:
-        st.subheader('Incident Response & Resilience')
-        ir = portfolio
-        i1, i2, i3, i4, i5 = st.columns(5)
-        i1.metric('MTTD (hrs)', f"{ir['MTTD_Incident_hours']}")
-        i2.metric('MTTR Contain (hrs)', f"{ir['MTTR_Contain_hours']}")
-        i3.metric('MTTR Recovery (hrs)', f"{ir['MTTR_Recovery_hours']}")
-        i4.metric('% Reported <24h', f"{ir['Pct_Reported_within_24h_pct']}%")
-        i5.metric('Unplanned Downtime (hrs)', f"{ir['Unplanned_Downtime_hours']}")
+        # Visuals for a single plant
+        col_plant1, col_plant2 = st.columns(2)
+        with col_plant1:
+            st.plotly_chart(create_radar_chart(filtered_controls_df, selected_plant), use_container_width=True)
+        
+        with col_plant2:
+            st.plotly_chart(create_top_bottom_bar_chart(filtered_controls_df, f"Weakest Controls for {selected_plant}", ascending=True), use_container_width=True)
+            st.plotly_chart(create_top_bottom_bar_chart(filtered_controls_df, f"Strongest Controls for {selected_plant}", ascending=False), use_container_width=True)
+            
+        # Scatter plot for incident metrics
+        st.subheader("Operational Metrics Deep-Dive")
+        
+        fig_scatter = px.scatter(
+            filtered_kpis_df,
+            x='MTTD (hours)', y='MTTR (days)',
+            color='Month',
+            size='Incident Rate (per 1,000 endpoints)',
+            title=f"MTTD vs. MTTR for {selected_plant}",
+            hover_name='Month',
+            labels={'MTTD (hours)': 'Mean Time to Detect (hours)', 'MTTR (days)': 'Mean Time to Recover (days)'}
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
+        
+elif page == "Control Drill-Down":
+    st.subheader("Control-Specific Maturity & Performance")
+    
+    # Control-specific filters
+    domain_list = sorted(list(CONTROL_DOMAINS.keys()))
+    selected_domain = st.sidebar.selectbox("Select a Domain", domain_list)
+    
+    controls_in_domain = CONTROL_DOMAINS[selected_domain]
+    control_names_map = {CONTROL_DESCRIPTIONS[c]: c for c in controls_in_domain}
+    selected_control_name = st.sidebar.selectbox("Select a Control", sorted(list(control_names_map.keys())))
+    selected_control_id = control_names_map[selected_control_name]
+    
+    filtered_by_control = filtered_controls_df[filtered_controls_df['Control ID'] == selected_control_id]
+    
+    st.write(f"### Analysis for Control: {selected_control_name} ({selected_control_id})")
+    
+    # Column chart: Maturity by plant for the chosen control
+    fig_bar_plant = px.bar(
+        filtered_by_control.groupby('Plant')['CMMI Maturity'].mean().reset_index(),
+        x='Plant', y='CMMI Maturity',
+        title=f"CMMI Maturity by Plant for '{selected_control_name}'",
+        color='CMMI Maturity',
+        color_continuous_scale=px.colors.sequential.YlGnBu
+    )
+    fig_bar_plant.update_layout(xaxis_title="", yaxis_title="Average CMMI Maturity")
+    st.plotly_chart(fig_bar_plant, use_container_width=True)
+    
+    # Line chart: Time series for top/bottom plants
+    st.subheader("Maturity Trend over Time")
+    
+    # Find top 3 and bottom 3 plants for this control
+    avg_maturity_by_plant = filtered_by_control.groupby('Plant')['CMMI Maturity'].mean()
+    top_3_plants = avg_maturity_by_plant.nlargest(3).index.tolist()
+    bottom_3_plants = avg_maturity_by_plant.nsmallest(3).index.tolist()
+    
+    plants_to_show = top_3_plants + bottom_3_plants
+    
+    trend_df = filtered_by_control[filtered_by_control['Plant'].isin(plants_to_show)]
+    
+    fig_trend = px.line(
+        trend_df,
+        x='Month', y='CMMI Maturity', color='Plant',
+        title=f"CMMI Maturity Trend for '{selected_control_name}'",
+        markers=True
+    )
+    fig_trend.update_layout(xaxis_title='Month', yaxis_title='CMMI Maturity')
+    st.plotly_chart(fig_trend, use_container_width=True)
 
-        # SLA chart for reporting
-        sla_vals = [ir['Pct_Reported_within_24h_pct'], max(0,100-ir['Pct_Reported_within_24h_pct'])]
-        fig_pie = px.pie(names=['Reported <24h','Reported >24h'], values=sla_vals)
-        st.plotly_chart(fig_pie, use_container_width=True)
-
-        with st.expander('Methodology & Data Requirements'):
-            st.write('- MTTD/MTTR: incident ticket timelines from SOC and IR records.
-- % reported in 24h: compare incident detection timestamp with regulator notification timestamp.
-- Unplanned downtime: correlate MES/SCADA downtime with incident tickets (start/end times).')
-
-    # Awareness Tab
-    with tabs[5]:
-        st.subheader('Employee Awareness & Training')
-        aw = portfolio
-        a1, a2, a3 = st.columns(3)
-        a1.metric('% Employees Trained', f"{aw['Pct_Employees_Trained_pct']}%")
-        a2.metric('Phishing Failure Rate', f"{aw['Phishing_Failure_pct']}%")
-        a3.metric('Incidents due to Employee Error', f"{aw['Incidents_Employee_Error_cnt']}")
-
-        # trend of phishing failures (mock)
-        phishing_ts = ops_filtered.groupby('date')['Phishing_Failure_pct'].mean().reset_index()
-        if not phishing_ts.empty:
-            fig_pf = px.line(phishing_ts, x='date', y='Phishing_Failure_pct', markers=True)
-            fig_pf.update_layout(yaxis_title='Phishing Failure (%)')
-            st.plotly_chart(fig_pf, use_container_width=True)
-
-        with st.expander('Methodology & Data Requirements'):
-            st.write('- Training: LMS completion reports with user and role mapping.
-- Phishing failure: simulated campaign platform results; ensure unique user counts and avoid double-counting.
-- Incident attribution: incident post-mortems tagging human error as root cause.')
-
-    # Product Security Tab
-    with tabs[6]:
-        st.subheader('Product Security (Vehicles & Services)')
-        ps = portfolio
-        p1, p2, p3, p4 = st.columns(4)
-        p1.metric('% New Models with TARA', f"{ps['Pct_New_Models_TARA_pct']}%")
-        p2.metric('Time vuln -> patch (days)', f"{ps['Time_Vuln_to_Patch_days']}")
-        p3.metric('% Fleet OTA patchable', f"{ps['Pct_Fleet_OTA_Patchable_pct']}%")
-        p4.metric('Successful Pentests (count)', f"{ps['Successful_Pentest_Count']}")
-
-        fig_pod = px.bar(x=['TARA %','Fleet OTA %'], y=[ps['Pct_New_Models_TARA_pct'], ps['Pct_Fleet_OTA_Patchable_pct']])
-        fig_pod.update_layout(yaxis=dict(range=[0,100]), height=300)
-        st.plotly_chart(fig_pod, use_container_width=True)
-
-        with st.expander('Methodology & Data Requirements'):
-            st.write('- TARA: design-phase artifacts for each new model.
-- Vulnerability->patch: track from discovery ticket to OTA release version.
-- OTA patchable: device management/telemetry coverage of fleet.
-- Penetration tests: validated reports and remediation verification.')
-
-    # Control Maturity tab: radar + plant comparator
-    with tabs[7]:
-        st.subheader('Control Maturity — Compare Plants')
-        cmp_plants = st.multiselect('Select plants to compare (radar)', options=PLANTS, default=[selected_plants[0]])
-        if not cmp_plants:
-            st.info('Choose one or more plants to compare.')
-        else:
-            latest = mat_filtered['date'].max()
-            cmp_df = mat_filtered[mat_filtered['date']==latest]
-            domain_avg = cmp_df.groupby(['plant','domain'])['cmmi'].mean().reset_index()
-            fig = go.Figure()
-            for plant in cmp_plants:
-                row = domain_avg[domain_avg['plant']==plant]
-                if not row.empty:
-                    fig.add_trace(go.Scatterpolar(r=row['cmmi'], theta=row['domain'], fill='toself', name=plant))
-            fig.update_layout(polar=dict(radialaxis=dict(range=[0,5])), height=600)
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.markdown('**Weakest controls (selected plants)**')
-            weak = cmp_df.groupby(['control_id','control_name'])['cmmi'].mean().reset_index().sort_values('cmmi').head(10)
-            st.table(weak)
-
-    # download
-    with st.sidebar.expander('Export & Debug'):
-        if st.button('Download Maturity CSV'):
-            st.sidebar.download_button('Download CSV', mat_filtered.to_csv(index=False).encode('utf-8'), file_name='maturity_export.csv')
-        if st.button('Download Ops CSV'):
-            st.sidebar.download_button('Download CSV', ops_filtered.to_csv(index=False).encode('utf-8'), file_name='ops_export.csv')
-
-    st.sidebar.markdown('---')
-    st.sidebar.caption('Refactored UX: tabs, cards, charts, and methodology expanders. Synthetic data only.')
-
-if __name__ == '__main__':
-    main()
+# --- KPI Glossary ---
+with st.sidebar.expander("KPI Glossary"):
+    st.write("""
+    - **NIS2 Compliance Score (%):** The percentage of controls with a CMMI maturity score of 3.0 or higher. Mandatory controls are weighted twice.
+    - **Average Control Maturity (0-5):** The mean CMMI maturity score across all controls and plants.
+    - **Critical Control Coverage (%):** The percentage of mandatory NIS2 controls that have reached a CMMI maturity of 3.0 or higher.
+    - **MTTD (hours):** Mean Time to Detect a security incident. Lower is better.
+    - **MTTR (days):** Mean Time to Respond and Recover from an incident. Lower is better.
+    - **Patch SLA Adherence (%):** Percentage of critical vulnerabilities remediated within the defined policy window. Higher is better.
+    - **Vulnerability Backlog (count):** The number of open vulnerabilities that have exceeded their remediation policy window. Lower is better.
+    - **Backup Restore Test Pass Rate (%):** The success rate of monthly tests to restore data from backups.
+    - **Phishing Failure Rate (%):** Percentage of users who fall for simulated phishing campaigns. Lower is better.
+    - **Third-Party Assessment Coverage (%):** Percentage of critical suppliers who have undergone a security risk assessment.
+    - **OT Asset Inventory Completeness (%):** The percentage of operational technology (OT) assets that are accurately tracked in the asset inventory.
+    - **ICS/OT Segmentation Coverage (%):** The extent to which critical OT networks are isolated from IT and other networks.
+    - **Incident Rate (per 1,000 endpoints):** The number of security incidents reported per 1,000 managed devices.
+    """)
