@@ -116,7 +116,7 @@ control_domains = [
 # Generate comprehensive fake data with plant information
 def generate_comprehensive_data():
     # Dates for last 12 months
-    dates = pd.date_range(end=datetime.today(), periods=12, freq='M')
+    dates = pd.date_range(end=datetime.today(), periods=12, freq='ME')
     
     all_governance_data = []
     all_supply_chain_data = []
@@ -687,4 +687,50 @@ else:
                   title='Management Training Trend by Plant',
                   labels={'Mgmt_Trained_Pct': 'Training Completion (%)', 'Plant': 'Production Plant'})
 fig.update_layout(height=300)
-st.plotly
+st.plotly_chart(fig, use_container_width=True)
+
+# 2. Supply Chain & Third-Party Risk Section
+st.markdown('<div class="section-header">Supply Chain & Third-Party Risk</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure cybersecurity across the supply chain:
+    - **Supplier Compliance**: Percentage of critical suppliers compliant with security requirements
+    - **Supplier Assessments**: Percentage of suppliers with completed security assessments
+    - **Vulnerability Remediation**: Time to remediate vulnerabilities from suppliers
+    - **Supplier Incidents**: Number of security incidents originating from suppliers
+    """)
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Supplier Compliance Score</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_supply_chain['Compliance_Score'].mean()
+    else:
+        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Compliance_Score'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col2:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Suppliers Assessed</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_supply_chain['Assessment_Completed'].mean() * 100
+    else:
+        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Assessment_Completed'].mean() * 100
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col3:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Supplier Vuln. Remediation</div>', unsafe_allow_html=True)
+    # This would typically come from a different data source
+    current_val = 45  # Fixed for demonstration
+    st.markdown(f'<div class="metric-value">{current_val:.1f} days</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col4:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label
