@@ -1,736 +1,405 @@
+"""
+Professional Streamlit dashboard (single-file) simulating NIS2 control maturity across assembly plants.
+How to run:
+    1. Create a virtualenv with Python 3.9+.
+    2. pip install streamlit pandas numpy plotly openpyxl
+    3. streamlit run streamlit_nis2_dashboard_app.py
+
+This app uses synthetic data (12 months) and provides Overview, Plant Drill-Down and Control Drill-Down pages.
+"""
+
+from __future__ import annotations
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from io import BytesIO
 from datetime import datetime, timedelta
-from plotly.subplots import make_subplots
 
-# Page configuration
-st.set_page_config(
-    page_title="NIS2 Compliance Dashboard",
-    page_icon="🚗",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# -----------------------------
+# Constants and configuration
+# -----------------------------
+RANDOM_SEED = 42
+np.random.seed(RANDOM_SEED)
 
-# Custom CSS for professional styling
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 28px;
-        color: #2c3e50;
-        font-weight: 700;
-        margin-bottom: 10px;
-        border-bottom: 2px solid #3498db;
-        padding-bottom: 10px;
-    }
-    .section-header {
-        background: linear-gradient(90deg, #2c3e50 0%, #3498db 100%);
-        color: white;
-        padding: 12px 15px;
-        border-radius: 5px;
-        margin-top: 25px;
-        margin-bottom: 15px;
-        font-weight: 600;
-        font-size: 18px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    .kpi-box {
-        background-color: white;
-        border-radius: 8px;
-        padding: 18px;
-        margin-bottom: 15px;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
-        border-left: 4px solid #3498db;
-        transition: transform 0.2s;
-    }
-    .kpi-box:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.1);
-    }
-    .positive {
-        color: #27ae60;
-        font-weight: 600;
-    }
-    .negative {
-        color: #e74c3c;
-        font-weight: 600;
-    }
-    .metric-value {
-        font-size: 24px;
-        font-weight: 700;
-        color: #2c3e50;
-    }
-    .metric-label {
-        font-size: 14px;
-        color: #7f8c8d;
-        margin-bottom: 5px;
-    }
-    .info-text {
-        background-color: #e8f4fc;
-        padding: 12px;
-        border-radius: 5px;
-        border-left: 4px solid #3498db;
-        margin-bottom: 20px;
-        font-size: 14px;
-    }
-    .tab-container {
-        background-color: white;
-        border-radius: 8px;
-        padding: 20px;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
-    }
-    .plant-comparison {
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 20px;
-    }
-    .maturity-1 { background-color: #e74c3c; color: white; }
-    .maturity-2 { background-color: #f39c12; color: white; }
-    .maturity-3 { background-color: #f1c40f; color: black; }
-    .maturity-4 { background-color: #2ecc71; color: white; }
-    .maturity-5 { background-color: #27ae60; color: white; }
-</style>
-""", unsafe_allow_html=True)
-
-# List of actual automotive plants
-plants = [
-    "Mirafiori", "Cassino", "Melfi (SATA)", "Pomigliano (G.B. Vico)", "Modena",
-    "Atessa (SEVEL Sud)", "Poissy", "Mulhouse", "Rennes", "Sochaux",
-    "Hordain (Sevelnord)", "Eisenach", "Rüsselsheim", "Vigo", "Zaragoza",
-    "Madrid", "Mangualde", "Tychy", "Gliwice", "Trnava",
-    "Kolín", "Szentgotthárd", "Kragujevac", "Bursa (Tofaş JV)", "Luton",
-    "Ellesmere Port"
+PLANTS = [
+    "Mirafiori","Cassino","Melfi (SATA)","Pomigliano (G.B. Vico)","Modena",
+    "Atessa (SEVEL Sud)","Poissy","Mulhouse","Rennes","Sochaux","Hordain (Sevelnord)",
+    "Eisenach","Rüsselsheim","Vigo","Zaragoza","Madrid","Mangualde","Tychy",
+    "Gliwice","Trnava","Kolín","Szentgotthárd","Kragujevac","Bursa (Tofaş JV)",
+    "Luton","Ellesmere Port"
 ]
 
-# NIS2 Control Domains with CMMI maturity levels
-control_domains = [
-    "Risk Management", "Supply Chain Security", "Asset Management", 
-    "Incident Response", "Business Continuity", "Employee Awareness",
-    "Cryptography", "Access Control", "Network Security", "Physical Security"
+CONTROL_DOMAINS = [
+    "Governance & Policy","Risk Management","Asset & Configuration Management",
+    "Access Control & IAM","Network & Segmentation","Vulnerability & Patch Management",
+    "Secure Development & Change","Logging, Monitoring & Detection","Incident Response & Recovery",
+    "Business Continuity & DR","Backup & Restore Validation","Supplier/Third-Party Risk",
+    "Security Awareness & Phishing","Physical Security","Cloud & SaaS Security"
 ]
 
-# Generate comprehensive fake data with plant information
-def generate_comprehensive_data():
-    # Dates for last 12 months
-    dates = pd.date_range(end=datetime.today(), periods=12, freq='ME')
-    
-    all_governance_data = []
-    all_supply_chain_data = []
-    all_asset_data = []
-    all_incident_data = []
-    all_employee_data = []
-    all_product_data = []
-    all_maturity_data = []
-    
-    for plant in plants:
-        # Plant-specific baseline variations
-        plant_factor = np.random.uniform(0.8, 1.2)
-        
-        # 1. Governance & Risk Management Data
-        governance_data = []
-        for i, date in enumerate(dates):
-            governance_data.append({
-                'Date': date,
-                'Plant': plant,
-                'Mgmt_Trained_Pct': min(100, (50 + i*5 + np.random.randint(-5, 10)) * plant_factor),
-                'Cybersecurity_Budget_Pct': (5 + i*0.5 + np.random.uniform(-0.2, 0.5)) * plant_factor,
-                'Tested_Plans': min(10, (2 + i + np.random.randint(0, 2)) * plant_factor),
-                'Risk_Ack_Time_Days': max(1, (10 - i*0.8 + np.random.uniform(-1, 1)) / plant_factor)
+MONTHS = 12
+END_DATE = pd.Timestamp.today().normalize()
+START_DATE = END_DATE - pd.DateOffset(months=MONTHS-1)
+DATES = pd.date_range(start=START_DATE, periods=MONTHS, freq='MS')
+
+# -----------------------------
+# Helpers: synthetic data generation
+# -----------------------------
+@st.cache_data
+def generate_controls_taxonomy() -> pd.DataFrame:
+    """Create a controls table listing controls per domain with IDs and mandatory flag."""
+    rows = []
+    ctrl_id = 1
+    for domain in CONTROL_DOMAINS:
+        for i in range(1, 5):  # 3-5 controls per domain (fixed 4 for compactness)
+            rows.append({
+                'control_id': f'C{ctrl_id:03d}',
+                'domain': domain,
+                'control_name': f"{domain} - Control {i}",
+                'mandatory': np.random.choice([True, False], p=[0.45, 0.55])
             })
-        
-        # 2. Supply Chain & Third-Party Risk Data
-        suppliers = ['Tier 1 Electronics', 'Tier 2 Software', 'Tier 1 Chassis', 'Raw Materials', 'Tier 3 Components']
-        supply_chain_data = []
-        for supplier in suppliers:
-            base_compliance = np.random.randint(40, 70) * plant_factor
-            for i, date in enumerate(dates):
-                supply_chain_data.append({
-                    'Date': date,
-                    'Plant': plant,
-                    'Supplier': supplier,
-                    'Compliance_Score': min(100, (base_compliance + i*5 + np.random.randint(-5, 10)) * plant_factor),
-                    'Assessment_Completed': np.random.choice([0, 1], p=[0.2, 0.8]) if i > 3 else 0
+            ctrl_id += 1
+    return pd.DataFrame(rows)
+
+
+def _plant_baseline(plant_name: str) -> float:
+    """Assign baseline maturity per plant to create leaders, mid-pack, laggards."""
+    # A shortlist of leader and laggard plants to diversify results.
+    leaders = {"Mirafiori","Modena","Rennes","Mulhouse","Eisenach","Madrid"}
+    laggards = {"Kragujevac","Tychy","Gliwice","Kolín","Bursa (Tofaş JV)","Hordain (Sevelnord)"}
+    if plant_name in leaders:
+        return np.random.uniform(3.0, 4.2)
+    if plant_name in laggards:
+        return np.random.uniform(1.2, 2.2)
+    return np.random.uniform(2.3, 3.5)
+
+@st.cache_data
+def generate_maturity_timeseries(controls_df: pd.DataFrame) -> pd.DataFrame:
+    """Generate maturity (CMMI 0-5 float) per plant x control x month with modest trends."""
+    records = []
+    for plant in PLANTS:
+        base = _plant_baseline(plant)
+        plant_drift = np.random.normal(0.02, 0.07)  # small monthly drift
+        for _, ctrl in controls_df.iterrows():
+            # control-specific difficulty
+            ctrl_diff = np.random.normal(0, 0.45)
+            # generate month series
+            for month_idx, date in enumerate(DATES):
+                season = 0.08 * np.sin(2 * np.pi * month_idx / 12)
+                noise = np.random.normal(0, 0.18)
+                # start around base + ctrl_diff with some randomness
+                maturity = base + ctrl_diff + plant_drift * month_idx + season + noise
+                maturity = float(min(max(maturity, 0.0), 5.0))
+                records.append({
+                    'plant': plant,
+                    'control_id': ctrl['control_id'],
+                    'control_name': ctrl['control_name'],
+                    'domain': ctrl['domain'],
+                    'mandatory': ctrl['mandatory'],
+                    'date': date,
+                    'cmmi': round(maturity, 2)
                 })
-        
-        # 3. Asset Management & Vulnerability Data
-        asset_data = []
-        for i, date in enumerate(dates):
-            asset_data.append({
-                'Date': date,
-                'Plant': plant,
-                'Assets_Discovered_Pct': min(100, (70 + i*3 + np.random.randint(-5, 8)) * plant_factor),
-                'Critical_Vulnerabilities': np.random.randint(5, 20) / plant_factor,
-                'Remediation_Time_Days': max(10, (45 - i*3 + np.random.randint(-5, 5)) / plant_factor),
-                'OT_Segmentation_Pct': min(100, (60 + i*4 + np.random.randint(-5, 8)) * plant_factor)
-            })
-        
-        # 4. Incident Response & Resilience Data
-        incident_data = []
-        for i, date in enumerate(dates):
-            incidents = np.random.randint(1, 8) / plant_factor
-            incident_data.append({
-                'Date': date,
-                'Plant': plant,
-                'Incidents': incidents,
-                'Detection_Time_Hours': max(2, (24 - i*2 + np.random.randint(-2, 4)) / plant_factor),
-                'Containment_Time_Hours': max(1, (12 - i*1.5 + np.random.randint(-1, 3)) / plant_factor),
-                'Recovery_Time_Hours': max(4, (48 - i*4 + np.random.randint(-3, 6)) / plant_factor),
-                'Reported_On_Time': np.random.randint(max(0, incidents-2), incidents+1),
-                'Downtime_Hours': (np.random.randint(0, 10) if incidents > 0 else 0) / plant_factor
-            })
-        
-        # 5. Employee Awareness & Training Data
-        employee_data = []
-        for i, date in enumerate(dates):
-            employee_data.append({
-                'Date': date,
-                'Plant': plant,
-                'Training_Completed_Pct': min(100, (60 + i*4 + np.random.randint(-5, 10)) * plant_factor),
-                'Phishing_Failure_Rate': max(5, (25 - i*2 + np.random.randint(-3, 5)) / plant_factor),
-                'Employee_Error_Incidents': np.random.randint(0, 5) / plant_factor
-            })
-        
-        # 6. Product Security Data (Automotive Specific)
-        product_data = []
-        for i, date in enumerate(dates):
-            product_data.append({
-                'Date': date,
-                'Plant': plant,
-                'TARA_Completed_Pct': min(100, (70 + i*3 + np.random.randint(-5, 8)) * plant_factor),
-                'Vuln_Patch_Time_Days': max(30, (120 - i*8 + np.random.randint(-10, 15)) / plant_factor),
-                'OTA_Capable_Pct': min(100, (50 + i*5 + np.random.randint(-5, 10)) * plant_factor),
-                'PenTest_Success_Rate': max(0, (30 - i*2 + np.random.randint(-5, 5)) / plant_factor)
-            })
-        
-        # 7. Control Maturity Data (NIS2 + CMMI)
-        for date in dates:
-            for domain in control_domains:
-                # Base maturity with some progression over time
-                base_maturity = np.random.randint(1, 4)
-                maturity_progress = min(5, base_maturity + i//3 + np.random.randint(-1, 2))
-                
-                all_maturity_data.append({
-                    'Date': date,
-                    'Plant': plant,
-                    'Control_Domain': domain,
-                    'Maturity_Level': max(1, min(5, maturity_progress))
-                })
-        
-        # Append plant data to overall data
-        all_governance_data.extend(governance_data)
-        all_supply_chain_data.extend(supply_chain_data)
-        all_asset_data.extend(asset_data)
-        all_incident_data.extend(incident_data)
-        all_employee_data.extend(employee_data)
-        all_product_data.extend(product_data)
-    
-    return (pd.DataFrame(all_governance_data), 
-            pd.DataFrame(all_supply_chain_data),
-            pd.DataFrame(all_asset_data),
-            pd.DataFrame(all_incident_data),
-            pd.DataFrame(all_employee_data),
-            pd.DataFrame(all_product_data),
-            pd.DataFrame(all_maturity_data))
+    df = pd.DataFrame.from_records(records)
+    return df
 
-# Generate all data
-governance_df, supply_chain_df, asset_df, incident_df, employee_df, product_df, maturity_df = generate_comprehensive_data()
+@st.cache_data
+def generate_operational_metrics(maturity_df: pd.DataFrame) -> pd.DataFrame:
+    """Generate correlated operational KPIs (MTTD, MTTR, patch SLA, vuln backlog, etc.) per plant x month."""
+    rows = []
+    # aggregate baseline maturity per plant-month to influence operational metrics
+    agg = maturity_df.groupby(['plant','date'])['cmmi'].mean().reset_index().rename(columns={'cmmi':'avg_cmmi'})
+    for _, r in agg.iterrows():
+        avg = r['avg_cmmi']
+        # better maturity -> lower MTTD/MTTR, higher patch SLA, fewer backlog
+        mttd = max(0.5, np.random.normal(48 - avg*8, 6))  # hours
+        mttr = max(0.2, np.random.normal(10 - avg*1.5, 1.2))  # days
+        patch_sla = min(99.5, max(40, np.random.normal(60 + (avg-2.5)*12, 8)))
+        vuln_backlog = int(max(0, np.random.normal(400 - avg*70, 80)))
+        phishing_fail = max(0.5, np.random.normal(12 - (avg-2.5)*3.2, 2.8))
+        backup_pass = min(100, max(40, np.random.normal(78 + (avg-2.5)*8, 6)))
+        third_party = min(100, max(20, np.random.normal(55 + (avg-2.5)*10, 10)))
+        ot_inventory = min(100, max(10, np.random.normal(60 + (avg-2.5)*12, 12)))
+        ics_seg = min(100, max(5, np.random.normal(50 + (avg-2.5)*10, 10)))
+        incident_rate = max(0, np.random.normal(2.5 - (avg-2.5)*0.8, 0.9))  # per 1k endpoints
+        rows.append({
+            'plant': r['plant'],
+            'date': r['date'],
+            'avg_cmmi': round(avg,2),
+            'MTTD_hours': round(float(mttd),2),
+            'MTTR_days': round(float(mttr),2),
+            'Patch_SLA_pct': round(float(patch_sla),2),
+            'Vuln_Backlog_cnt': int(vuln_backlog),
+            'Phishing_Fail_pct': round(float(phishing_fail),2),
+            'Backup_Restore_Pass_pct': round(float(backup_pass),2),
+            'Third_Party_Coverage_pct': round(float(third_party),2),
+            'OT_Inventory_Completeness_pct': round(float(ot_inventory),2),
+            'ICS_Segmentation_pct': round(float(ics_seg),2),
+            'Incident_Rate_per_1k': round(float(incident_rate),2)
+        })
+    return pd.DataFrame(rows)
 
-# Dashboard title
-st.title("🚗 Automotive NIS2 Compliance Dashboard")
-st.markdown("### Comprehensive Monitoring of Key Performance Indicators and Control Maturity for NIS2 Implementation")
+# -----------------------------
+# KPI calculations
+# -----------------------------
 
-# Sidebar
-with st.sidebar:
-    st.header("Dashboard Controls")
-    st.markdown("---")
-    
-    # Region filter
-    regions = {
-        "Italy": ["Mirafiori", "Cassino", "Melfi (SATA)", "Pomigliano (G.B. Vico)", "Modena"],
-        "France": ["Poissy", "Mulhouse", "Rennes", "Sochaux", "Hordain (Sevelnord)"],
-        "Germany": ["Eisenach", "Rüsselsheim"],
-        "Spain": ["Vigo", "Zaragoza", "Madrid"],
-        "Portugal": ["Mangualde"],
-        "Poland": ["Tychy", "Gliwice"],
-        "Slovakia": ["Trnava"],
-        "Czech Republic": ["Kolín"],
-        "Hungary": ["Szentgotthárd"],
-        "Serbia": ["Kragujevac"],
-        "Turkey": ["Bursa (Tofaş JV)"],
-        "UK": ["Luton", "Ellesmere Port"]
+def compute_kpis(maturity_df: pd.DataFrame, ops_df: pd.DataFrame, start_date=None, end_date=None, plants_filter=None):
+    """Compute the portfolio and plant-level KPIs described in the spec.
+    Return a tuple: (kpi_cards_df, portfolio_trends_df, heatmap_df, distributions_df)
+    """
+    df = maturity_df.copy()
+    if plants_filter:
+        df = df[df['plant'].isin(plants_filter)]
+    if start_date:
+        df = df[df['date'] >= pd.to_datetime(start_date)]
+    if end_date:
+        df = df[df['date'] <= pd.to_datetime(end_date)]
+
+    # Weighted compliance: mandatory controls weight 2
+    df['mandatory_weight'] = df['mandatory'].apply(lambda x: 2 if x else 1)
+    # Define compliance per row (CMMI >= 3.0)
+    df['compliant'] = (df['cmmi'] >= 3.0).astype(int)
+    df['weighted_compliant'] = df['compliant'] * df['mandatory_weight']
+    df['weighted_total'] = df['mandatory_weight']
+
+    # Portfolio-level snapshots using latest month in range
+    latest = df['date'].max()
+    snapshot = df[df['date'] == latest]
+
+    # NIS2 Compliance Score (%) = weighted compliant / weighted total
+    comp_score = snapshot['weighted_compliant'].sum() / snapshot['weighted_total'].sum() * 100
+
+    avg_maturity = snapshot['cmmi'].mean()
+
+    crit_coverage = snapshot[snapshot['mandatory']]['compliant'].sum() / snapshot[snapshot['mandatory']].shape[0] * 100
+
+    # Distribution
+    bins = [0,1,2,3,4,5]
+    snapshot['maturity_bin'] = pd.cut(snapshot['cmmi'], bins=bins, labels=['0-1','2','3','4','5'], include_lowest=True)
+    distribution = snapshot.groupby('maturity_bin').size().reset_index(name='count')
+    distribution['pct'] = distribution['count'] / distribution['count'].sum() * 100
+
+    # Operational KPIs from ops_df (latest)
+    ops = ops_df.copy()
+    if plants_filter:
+        ops = ops[ops['plant'].isin(plants_filter)]
+    if start_date:
+        ops = ops[ops['date'] >= pd.to_datetime(start_date)]
+    if end_date:
+        ops = ops[ops['date'] <= pd.to_datetime(end_date)]
+    ops_latest = ops[ops['date'] == ops['date'].max()]
+
+    mttd = ops_latest['MTTD_hours'].mean()
+    mttr = ops_latest['MTTR_days'].mean()
+    patch_sla = ops_latest['Patch_SLA_pct'].mean()
+
+    # Heatmap: plants x domain avg cmmi (latest month)
+    hm = snapshot.groupby(['plant','domain'])['cmmi'].mean().reset_index()
+    heatmap_df = hm.pivot(index='plant', columns='domain', values='cmmi').fillna(0)
+
+    # Top/Bottom controls (portfolio-level average)
+    control_avg = snapshot.groupby(['control_id','control_name'])['cmmi'].mean().reset_index()
+    top5 = control_avg.sort_values('cmmi', ascending=False).head(5)
+    bot5 = control_avg.sort_values('cmmi', ascending=True).head(5)
+
+    # Trends (compliance score per month)
+    month_agg = df.copy()
+    month_agg['weighted_compliant'] = month_agg['compliant'] * month_agg['mandatory_weight']
+    trends = month_agg.groupby('date').agg({'weighted_compliant':'sum','weighted_total':'sum'}).reset_index()
+    trends['compliance_pct'] = trends['weighted_compliant'] / trends['weighted_total'] * 100
+
+    # Return dict summarizing
+    return {
+        'comp_score': round(float(comp_score),2),
+        'avg_maturity': round(float(avg_maturity),2),
+        'critical_coverage': round(float(crit_coverage),2),
+        'mttd': round(float(mttd),2),
+        'mttr': round(float(mttr),2),
+        'patch_sla': round(float(patch_sla),2),
+        'distribution': distribution,
+        'heatmap_df': heatmap_df,
+        'top5': top5,
+        'bot5': bot5,
+        'trends': trends
     }
-    
-    selected_region = st.selectbox(
-        "Filter by Region",
-        options=["All Regions"] + list(regions.keys())
-    )
-    
-    # Plant selection based on region
-    if selected_region == "All Regions":
-        available_plants = plants
-    else:
-        available_plants = regions[selected_region]
-    
-    selected_plants = st.multiselect(
-        "Select Plants",
-        options=available_plants,
-        default=available_plants[:3] if len(available_plants) > 3 else available_plants
-    )
-    
-    # Select all plants option
-    if st.button("Select All Plants in Region"):
-        selected_plants = available_plants
-    
-    date_range = st.date_input(
-        "Select Date Range",
-        value=(governance_df['Date'].min(), governance_df['Date'].max()),
-        min_value=governance_df['Date'].min(),
-        max_value=governance_df['Date'].max()
-    )
-    
-    selected_suppliers = st.multiselect(
-        "Select Suppliers",
-        options=supply_chain_df['Supplier'].unique(),
-        default=supply_chain_df['Supplier'].unique()
-    )
-    
-    selected_control_domains = st.multiselect(
-        "Select Control Domains",
-        options=control_domains,
-        default=control_domains
-    )
-    
-    # View option
-    view_option = st.radio(
-        "View Data As:",
-        ["Individual Plants", "Aggregated View"]
-    )
-    
-    st.markdown("---")
-    st.markdown("### NIS2 Overview")
-    st.info("""
-    The NIS2 Directive enhances cybersecurity across the EU. 
-    Automotive companies must implement comprehensive security measures 
-    and report significant incidents within strict timelines.
-    """)
-    
-    st.markdown("---")
-    st.markdown("### CMMI Maturity Levels")
-    st.markdown("""
-    - **Level 1: Initial** - Processes are unpredictable and reactive
-    - **Level 2: Managed** - Processes are characterized for projects and are often reactive
-    - **Level 3: Defined** - Processes are characterized for the organization and are proactive
-    - **Level 4: Quantitatively Managed** - Processes are measured and controlled
-    - **Level 5: Optimizing** - Focus on process improvement
-    """)
-    
-    st.markdown("---")
-    st.markdown("**Report Generated:**")
-    st.markdown(f"{datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-# Filter data based on selections
-def filter_data(df, plants, date_range, suppliers=None, domains=None):
-    filtered_df = df[
-        (df['Plant'].isin(plants)) & 
-        (df['Date'] >= pd.to_datetime(date_range[0])) & 
-        (df['Date'] <= pd.to_datetime(date_range[1]))
-    ]
-    
-    if suppliers is not None and 'Supplier' in df.columns:
-        filtered_df = filtered_df[filtered_df['Supplier'].isin(suppliers)]
-    
-    if domains is not None and 'Control_Domain' in df.columns:
-        filtered_df = filtered_df[filtered_df['Control_Domain'].isin(domains)]
-    
-    return filtered_df
+# -----------------------------
+# Streamlit UI / App
+# -----------------------------
 
-filtered_governance_df = filter_data(governance_df, selected_plants, date_range)
-filtered_supply_chain_df = filter_data(supply_chain_df, selected_plants, date_range, selected_suppliers)
-filtered_asset_df = filter_data(asset_df, selected_plants, date_range)
-filtered_incident_df = filter_data(incident_df, selected_plants, date_range)
-filtered_employee_df = filter_data(employee_df, selected_plants, date_range)
-filtered_product_df = filter_data(product_df, selected_plants, date_range)
-filtered_maturity_df = filter_data(maturity_df, selected_plants, date_range, domains=selected_control_domains)
+def to_excel_bytes(df: pd.DataFrame) -> bytes:
+    """Return an Excel file in bytes for download."""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='export')
+    return output.getvalue()
 
-# Prepare data based on view option
-if view_option == "Aggregated View":
-    # For aggregated view, we'll group by date and calculate means for numeric columns only
-    governance_agg = filtered_governance_df.groupby('Date').mean(numeric_only=True).reset_index()
-    
-    # For supply chain, we need to handle the supplier dimension differently
-    supply_chain_agg = filtered_supply_chain_df.groupby(['Date', 'Supplier']).mean(numeric_only=True).reset_index()
-    
-    asset_agg = filtered_asset_df.groupby('Date').mean(numeric_only=True).reset_index()
-    incident_agg = filtered_incident_df.groupby('Date').mean(numeric_only=True).reset_index()
-    employee_agg = filtered_employee_df.groupby('Date').mean(numeric_only=True).reset_index()
-    product_agg = filtered_product_df.groupby('Date').mean(numeric_only=True).reset_index()
-    maturity_agg = filtered_maturity_df.groupby(['Date', 'Control_Domain']).mean(numeric_only=True).reset_index()
-    
-    display_governance = governance_agg
-    display_supply_chain = supply_chain_agg
-    display_asset = asset_agg
-    display_incident = incident_agg
-    display_employee = employee_agg
-    display_product = product_agg
-    display_maturity = maturity_agg
-else:
-    # For individual view, we'll keep the plant-specific data
-    display_governance = filtered_governance_df
-    display_supply_chain = filtered_supply_chain_df
-    display_asset = filtered_asset_df
-    display_incident = filtered_incident_df
-    display_employee = filtered_employee_df
-    display_product = filtered_product_df
-    display_maturity = filtered_maturity_df
 
-# Calculate overall compliance based on selected plants and time range
-def calculate_overall_compliance(governance_df, supply_chain_df, asset_df, incident_df, employee_df, product_df):
-    # This is a simplified calculation - in a real scenario, you'd have weighted scores
-    governance_score = governance_df['Mgmt_Trained_Pct'].mean() * 0.15
-    supply_chain_score = supply_chain_df['Compliance_Score'].mean() * 0.20
-    asset_score = (asset_df['Assets_Discovered_Pct'].mean() + (100 - asset_df['Remediation_Time_Days'].mean())) * 0.15
-    incident_score = (100 - incident_df['Detection_Time_Hours'].mean()) * 0.20
-    employee_score = employee_df['Training_Completed_Pct'].mean() * 0.15
-    product_score = product_df['TARA_Completed_Pct'].mean() * 0.15
-    
-    return min(100, (governance_score + supply_chain_score + asset_score + incident_score + employee_score + product_score))
+def main():
+    st.set_page_config(page_title="NIS2 Control Maturity - Automotive Portfolio", layout='wide')
+    st.title("NIS2 Control Maturity Dashboard — Automotive Plants Portfolio")
+    st.markdown("Professional synthetic dataset for demo, KPIs aligned to NIS2 and maturity based on CMMI.")
 
-overall_compliance = calculate_overall_compliance(
-    filtered_governance_df, 
-    filtered_supply_chain_df, 
-    filtered_asset_df, 
-    filtered_incident_df, 
-    filtered_employee_df, 
-    filtered_product_df
-)
+    # Generate / load data
+    controls = generate_controls_taxonomy()
+    maturity = generate_maturity_timeseries(controls)
+    ops = generate_operational_metrics(maturity)
 
-# Executive Summary
-st.markdown("## Executive Summary")
-col1, col2, col3, col4 = st.columns(4)
+    # Sidebar filters
+    st.sidebar.header("Filters & Controls")
+    plant_select = st.sidebar.multiselect("Select Plants (multi)", options=PLANTS, default=None)
+    date_range = st.sidebar.date_input("Date Range", value=(DATES.min().date(), DATES.max().date()),
+                                      min_value=DATES.min().date(), max_value=DATES.max().date())
+    domain_select = st.sidebar.multiselect("Domain (optional)", options=CONTROL_DOMAINS, default=None)
+    show_topbottom = st.sidebar.checkbox("Show Top/Bottom 5 Controls", value=True)
+    download_raw = st.sidebar.button("Download Current Data (Excel)")
 
-with col1:
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number",
-        value = overall_compliance,
-        domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': "Overall Compliance"},
-        gauge = {
-            'axis': {'range': [0, 100]},
-            'bar': {'color': "#3498db"},
-            'steps': [
-                {'range': [0, 50], 'color': "#e74c3c"},
-                {'range': [50, 75], 'color': "#f39c12"},
-                {'range': [75, 100], 'color': "#2ecc71"}
-            ],
-            'threshold': {
-                'line': {'color': "red", 'width': 4},
-                'thickness': 0.75,
-                'value': 90
-            }
-        }
-    ))
-    fig.update_layout(height=250)
-    st.plotly_chart(fig, use_container_width=True)
+    start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
 
-with col2:
-    # Critical Suppliers Compliance
-    if view_option == "Aggregated View":
-        current_val = display_supply_chain['Compliance_Score'].mean()
-    else:
-        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Compliance_Score'].mean()
-    
-    fig = go.Figure(go.Indicator(
-        mode = "number",
-        value = current_val,
-        number = {'suffix': "%"},
-        title = {"text": "Supplier Compliance"},
-        domain = {'x': [0, 1], 'y': [0, 1]}
-    ))
-    fig.update_layout(height=250)
-    st.plotly_chart(fig, use_container_width=True)
+    # Apply domain filter to maturity if selected
+    mat_filtered = maturity.copy()
+    if plant_select and len(plant_select) > 0:
+        mat_filtered = mat_filtered[mat_filtered['plant'].isin(plant_select)]
+    if domain_select and len(domain_select) > 0:
+        mat_filtered = mat_filtered[mat_filtered['domain'].isin(domain_select)]
+    mat_filtered = mat_filtered[(mat_filtered['date'] >= start_date) & (mat_filtered['date'] <= end_date)]
 
-with col3:
-    # Vulnerability Remediation
-    if view_option == "Aggregated View":
-        current_val = display_asset['Remediation_Time_Days'].mean()
-    else:
-        current_val = display_asset[display_asset['Date'] == display_asset['Date'].max()]['Remediation_Time_Days'].mean()
-    
-    fig = go.Figure(go.Indicator(
-        mode = "number",
-        value = current_val,
-        number = {'suffix': " days"},
-        title = {"text": "Avg. Remediation Time"},
-        domain = {'x': [0, 1], 'y': [0, 1]}
-    ))
-    fig.update_layout(height=250)
-    st.plotly_chart(fig, use_container_width=True)
+    ops_filtered = ops.copy()
+    if plant_select and len(plant_select) > 0:
+        ops_filtered = ops_filtered[ops_filtered['plant'].isin(plant_select)]
+    ops_filtered = ops_filtered[(ops_filtered['date'] >= start_date) & (ops_filtered['date'] <= end_date)]
 
-with col4:
-    # Incident Detection Time
-    if view_option == "Aggregated View":
-        current_val = display_incident['Detection_Time_Hours'].mean()
-    else:
-        current_val = display_incident[display_incident['Date'] == display_incident['Date'].max()]['Detection_Time_Hours'].mean()
-    
-    fig = go.Figure(go.Indicator(
-        mode = "number",
-        value = current_val,
-        number = {'suffix': " hours"},
-        title = {"text": "Incident Detection Time"},
-        domain = {'x': [0, 1], 'y': [0, 1]}
-    ))
-    fig.update_layout(height=250)
-    st.plotly_chart(fig, use_container_width=True)
+    # Pages
+    page = st.sidebar.radio("Page", ['Overview','Plant Drill-Down','Control Drill-Down'])
 
-# Control Maturity Section
-st.markdown('<div class="section-header">Control Maturity Assessment (NIS2 + CMMI)</div>', unsafe_allow_html=True)
+    # Compute KPIs
+    kpis = compute_kpis(mat_filtered, ops_filtered, start_date=start_date, end_date=end_date, plants_filter=plant_select)
 
-with st.expander("ℹ️ About Control Maturity Assessment"):
-    st.markdown("""
-    This section assesses the maturity of NIS2 control domains using the CMMI maturity model:
-    - **Level 1: Initial** - Processes are unpredictable and reactive
-    - **Level 2: Managed** - Processes are characterized for projects and are often reactive
-    - **Level 3: Defined** - Processes are characterized for the organization and are proactive
-    - **Level 4: Quantitatively Managed** - Processes are measured and controlled
-    - **Level 5: Optimizing** - Focus on process improvement
-    
-    The assessment is based on implementation evidence, process documentation, and performance metrics.
-    """)
+    if page == 'Overview':
+        # KPI cards
+        col1, col2, col3, col4, col5, col6 = st.columns([1.2,1,1,1,1,1])
+        col1.metric("NIS2 Compliance (%)", f"{kpis['comp_score']}%")
+        col2.metric("Avg Control Maturity (0–5)", f"{kpis['avg_maturity']}")
+        col3.metric("Critical Control Coverage (%)", f"{kpis['critical_coverage']}%")
+        col4.metric("Patch SLA (%)", f"{kpis['patch_sla']:.1f}%")
+        col5.metric("MTTD (hrs)", f"{kpis['mttd']}")
+        col6.metric("MTTR (days)", f"{kpis['mttr']}")
 
-# Control Maturity Heatmap
-st.subheader("Control Maturity Heatmap")
+        st.subheader("Portfolio Maturity Heatmap (Plants × Domains)")
+        heatmap_df = kpis['heatmap_df'].reset_index().melt(id_vars='plant', var_name='domain', value_name='cmmi')
+        fig_hm = px.density_heatmap(heatmap_df, x='domain', y='plant', z='cmmi', histfunc='avg', nbinsx=len(CONTROL_DOMAINS), nbinsy=len(PLANTS), color_continuous_scale='RdYlGn')
+        fig_hm.update_layout(height=700, yaxis={'categoryorder':'array', 'categoryarray':PLANTS})
+        st.plotly_chart(fig_hm, use_container_width=True)
 
-# Prepare data for heatmap
-if view_option == "Aggregated View":
-    heatmap_data = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().reset_index()
-    heatmap_data['Plant'] = 'Average'
-else:
-    heatmap_data = display_maturity[display_maturity['Date'] == display_maturity['Date'].max()]
-    heatmap_data = heatmap_data.pivot_table(
-        index='Plant', 
-        columns='Control_Domain', 
-        values='Maturity_Level', 
-        aggfunc='mean'
-    ).reset_index().melt(id_vars='Plant', var_name='Control_Domain', value_name='Maturity_Level')
+        st.subheader("Top 5 and Bottom 5 Controls (Portfolio)")
+        cols_tb = st.columns(2)
+        if show_topbottom:
+            cols_tb[0].markdown("**Top 5 Controls (by avg maturity)**")
+            cols_tb[0].table(kpis['top5'])
+            cols_tb[1].markdown("**Bottom 5 Controls (by avg maturity)**")
+            cols_tb[1].table(kpis['bot5'])
 
-# Create heatmap
-if view_option == "Aggregated View":
-    fig = px.imshow(
-        heatmap_data.pivot_table(index='Plant', columns='Control_Domain', values='Maturity_Level'),
-        title='Average Control Maturity by Domain',
-        color_continuous_scale=['#e74c3c', '#f39c12', '#f1c40f', '#2ecc71', '#27ae60'],
-        zmin=1, zmax=5,
-        aspect="auto"
-    )
-    fig.update_layout(height=400)
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    fig = px.imshow(
-        heatmap_data.pivot_table(index='Plant', columns='Control_Domain', values='Maturity_Level'),
-        title='Control Maturity by Plant and Domain',
-        color_continuous_scale=['#e74c3c', '#f39c12', '#f1c40f', '#2ecc71', '#27ae60'],
-        zmin=1, zmax=5,
-        aspect="auto"
-    )
-    fig.update_layout(height=500)
-    st.plotly_chart(fig, use_container_width=True)
+        st.subheader("Maturity Distribution (Latest)")
+        dist = kpis['distribution']
+        fig_dist = px.bar(dist, x='maturity_bin', y='pct', labels={'maturity_bin':'Maturity Bin','pct':'% of controls'})
+        st.plotly_chart(fig_dist, use_container_width=True)
 
-# Control Maturity Summary
-st.subheader("Control Maturity Summary")
+        st.subheader("Compliance Trend (12 months)")
+        fig_tr = px.line(kpis['trends'], x='date', y='compliance_pct', markers=True)
+        fig_tr.update_layout(yaxis_title='Compliance (%)')
+        st.plotly_chart(fig_tr, use_container_width=True)
 
-col1, col2, col3 = st.columns(3)
+    elif page == 'Plant Drill-Down':
+        selected_plant = st.selectbox('Select Plant for Drill-Down', options=PLANTS, index=0)
+        st.header(f"Plant — {selected_plant}")
+        plant_mat = mat_filtered[mat_filtered['plant'] == selected_plant]
+        plant_ops = ops_filtered[ops_filtered['plant'] == selected_plant]
 
-with col1:
-    # Strongest controls
-    strongest_controls = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().nlargest(3)
-    st.markdown("### 🏆 Strongest Controls")
-    for control, maturity in strongest_controls.items():
-        st.markdown(f"**{control}**: {maturity:.1f}/5.0")
+        if plant_mat.empty:
+            st.warning('No data available for selected filters.')
+        else:
+            # Plant KPIs (latest)
+            latest_date = plant_mat['date'].max()
+            snapshot = plant_mat[plant_mat['date'] == latest_date]
+            comp_score = (snapshot.assign(weight=snapshot['mandatory'].apply(lambda x:2 if x else 1)).assign(compliant=(snapshot['cmmi']>=3.0).astype(int)).eval('compliant*weight').sum() / snapshot['mandatory'].apply(lambda x:2 if x else 1).sum())*100
+            avg_m = snapshot['cmmi'].mean()
+            cols = st.columns(4)
+            cols[0].metric('Plant Compliance (%)', f"{comp_score:.1f}%")
+            cols[1].metric('Avg Maturity', f"{avg_m:.2f}")
+            if not plant_ops.empty:
+                ops_latest = plant_ops[plant_ops['date']==plant_ops['date'].max()].iloc[0]
+                cols[2].metric('MTTD (hrs)', ops_latest['MTTD_hours'])
+                cols[3].metric('MTTR (days)', ops_latest['MTTR_days'])
 
-with col2:
-    # Weakest controls
-    weakest_controls = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().nsmallest(3)
-    st.markdown("### ⚠️ Weakest Controls")
-    for control, maturity in weakest_controls.items():
-        st.markdown(f"**{control}**: {maturity:.1f}/5.0")
+            # Radar chart (domain-level maturity)
+            domain_avg = snapshot.groupby('domain')['cmmi'].mean().reset_index()
+            fig_radar = go.Figure()
+            fig_radar.add_trace(go.Scatterpolar(r=domain_avg['cmmi'], theta=domain_avg['domain'], fill='toself', name=selected_plant))
+            fig_radar.update_layout(polar=dict(radialaxis=dict(range=[0,5])), showlegend=False, height=500)
+            st.plotly_chart(fig_radar, use_container_width=True)
 
-with col3:
-    # Maturity distribution
-    maturity_dist = display_maturity['Maturity_Level'].value_counts().sort_index()
-    st.markdown("### 📊 Maturity Distribution")
-    for level, count in maturity_dist.items():
-        st.markdown(f"**Level {level}**: {count} assessments")
+            st.subheader('Weakest and Strongest Controls')
+            ctrl_avg = snapshot.groupby(['control_id','control_name'])['cmmi'].mean().reset_index()
+            weakest = ctrl_avg.sort_values('cmmi').head(6)
+            strongest = ctrl_avg.sort_values('cmmi', ascending=False).head(6)
+            c1, c2 = st.columns(2)
+            c1.table(weakest)
+            c2.table(strongest)
 
-# Control Maturity Trends
-st.subheader("Control Maturity Trends Over Time")
+            st.subheader('Operational Scatter: MTTD vs MTTR (monthly)')
+            if not plant_ops.empty:
+                fig_s = px.scatter(plant_ops, x='MTTD_hours', y='MTTR_days', size='Vuln_Backlog_cnt', color='date', hover_data=['Patch_SLA_pct'])
+                st.plotly_chart(fig_s, use_container_width=True)
 
-# Prepare data for trend chart
-trend_data = display_maturity.groupby(['Date', 'Control_Domain'])['Maturity_Level'].mean().reset_index()
+    else:  # Control Drill-Down
+        domain = st.selectbox('Choose Domain', options=CONTROL_DOMAINS)
+        domain_controls = controls[controls['domain']==domain]
+        control_choice = st.selectbox('Choose Control', options=domain_controls['control_id'].tolist())
+        control_name = domain_controls[domain_controls['control_id']==control_choice]['control_name'].iloc[0]
+        st.header(f"Control — {control_choice} — {control_name}")
 
-fig = px.line(trend_data, x='Date', y='Maturity_Level', color='Control_Domain',
-              title='Control Maturity Trends Over Time',
-              labels={'Maturity_Level': 'Maturity Level', 'Control_Domain': 'Control Domain'})
-fig.update_layout(height=400)
-st.plotly_chart(fig, use_container_width=True)
+        ctrl_df = mat_filtered[mat_filtered['control_id']==control_choice]
+        if ctrl_df.empty:
+            st.warning('No data for this control with current filters.')
+        else:
+            # Column chart: maturity by plant (latest month)
+            latest_date = ctrl_df['date'].max()
+            snapshot = ctrl_df[ctrl_df['date']==latest_date]
+            fig_col = px.bar(snapshot.sort_values('cmmi', ascending=False), x='plant', y='cmmi', labels={'cmmi':'CMMI (0-5)'})
+            fig_col.update_layout(xaxis_tickangle=45, height=450)
+            st.plotly_chart(fig_col, use_container_width=True)
 
-# Control Maturity Radar Chart
-st.subheader("Control Maturity Radar Chart")
+            st.subheader('Time series: Top 3 and Bottom 3 plants for this control')
+            plant_avg = snapshot[['plant','cmmi']].sort_values('cmmi', ascending=False)
+            top3 = plant_avg['plant'].head(3).tolist()
+            bot3 = plant_avg['plant'].tail(3).tolist()
+            sel = top3 + bot3
+            ts = mat_filtered[(mat_filtered['control_id']==control_choice) & (mat_filtered['plant'].isin(sel))]
+            fig_ts = px.line(ts, x='date', y='cmmi', color='plant', markers=True)
+            fig_ts.update_layout(yaxis_range=[0,5])
+            st.plotly_chart(fig_ts, use_container_width=True)
 
-# Prepare data for radar chart
-if view_option == "Aggregated View":
-    radar_data = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().reset_index()
-    radar_data['Plant'] = 'Average'
-else:
-    radar_data = display_maturity[display_maturity['Date'] == display_maturity['Date'].max()]
-    radar_data = radar_data.groupby(['Plant', 'Control_Domain'])['Maturity_Level'].mean().reset_index()
+    # Download button logic (exports the filtered maturity dataframe)
+    if download_raw:
+        df_export = mat_filtered.copy()
+        st.sidebar.success('Preparing download...')
+        excel_bytes = to_excel_bytes(df_export)
+        st.sidebar.download_button('Download Excel', excel_bytes, file_name='nis2_maturity_export.xlsx')
 
-# Create radar chart
-if view_option == "Aggregated View":
-    fig = go.Figure()
-    fig.add_trace(go.Scatterpolar(
-        r=radar_data['Maturity_Level'],
-        theta=radar_data['Control_Domain'],
-        fill='toself',
-        name='Average Maturity'
-    ))
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
-        showlegend=True,
-        title='Average Control Maturity Radar Chart',
-        height=500
-    )
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    fig = go.Figure()
-    for plant in selected_plants:
-        plant_data = radar_data[radar_data['Plant'] == plant]
-        fig.add_trace(go.Scatterpolar(
-            r=plant_data['Maturity_Level'],
-            theta=plant_data['Control_Domain'],
-            fill='toself',
-            name=plant
-        ))
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
-        showlegend=True,
-        title='Control Maturity Radar Chart by Plant',
-        height=500
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    # KPI Glossary
+    with st.expander('KPI Glossary and Calculation Notes'):
+        st.markdown("""
+        - **NIS2 Compliance (%)**: percent of controls at CMMI >= 3.0, mandatory controls weighted 2x.
+        - **Avg Control Maturity**: arithmetic mean of control CMMI scores (0–5).
+        - **Critical Control Coverage**: percent of mandatory controls meeting CMMI >= 3.0.
+        - **MTTD / MTTR**: Mean Time to Detect (hours) and Mean Time to Recover (days) — synthetic and correlated with maturity.
+        - **Patch SLA**: percent of critical vulnerabilities remediated within policy window.
+        - **Vulnerability Backlog**: open vulnerabilities older than 30 days (synthetic count).
+        """)
 
-# 1. Governance & Risk Management Section
-st.markdown('<div class="section-header">Governance & Risk Management</div>', unsafe_allow_html=True)
+    st.sidebar.markdown("---")
+    st.sidebar.caption('Generated with a fixed seed for reproducibility. Synthetic data only; for demo purposes.')
 
-with st.expander("ℹ️ About these KPIs"):
-    st.markdown("""
-    These KPIs measure the organization's cybersecurity governance maturity:
-    - **Management Training**: Percentage of senior management trained on cybersecurity responsibilities
-    - **Budget Allocation**: Cybersecurity budget as a percentage of total IT/OT budget
-    - **Crisis Plans**: Number of defined and tested cyber crisis management plans
-    - **Risk Acknowledgement**: Time to acknowledge and assign new risks
-    """)
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Management Trained</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_governance['Mgmt_Trained_Pct'].mean()
-    else:
-        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Mgmt_Trained_Pct'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col2:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Cybersecurity Budget</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_governance['Cybersecurity_Budget_Pct'].mean()
-    else:
-        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Cybersecurity_Budget_Pct'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col3:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Tested Crisis Plans</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_governance['Tested_Plans'].mean()
-    else:
-        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Tested_Plans'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f}</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col4:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Risk Acknowledgement Time</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_governance['Risk_Ack_Time_Days'].mean()
-    else:
-        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Risk_Ack_Time_Days'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f} days</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Governance Trend Chart
-if view_option == "Aggregated View":
-    fig = px.line(display_governance, x='Date', y=['Mgmt_Trained_Pct', 'Cybersecurity_Budget_Pct'],
-                  title='Governance Metrics Trend',
-                  labels={'value': 'Percentage', 'variable': 'Metric'})
-else:
-    fig = px.line(display_governance, x='Date', y='Mgmt_Trained_Pct', color='Plant',
-                  title='Management Training Trend by Plant',
-                  labels={'Mgmt_Trained_Pct': 'Training Completion (%)', 'Plant': 'Production Plant'})
-fig.update_layout(height=300)
-st.plotly_chart(fig, use_container_width=True)
-
-# 2. Supply Chain & Third-Party Risk Section
-st.markdown('<div class="section-header">Supply Chain & Third-Party Risk</div>', unsafe_allow_html=True)
-
-with st.expander("ℹ️ About these KPIs"):
-    st.markdown("""
-    These KPIs measure cybersecurity across the supply chain:
-    - **Supplier Compliance**: Percentage of critical suppliers compliant with security requirements
-    - **Supplier Assessments**: Percentage of suppliers with completed security assessments
-    - **Vulnerability Remediation**: Time to remediate vulnerabilities from suppliers
-    - **Supplier Incidents**: Number of security incidents originating from suppliers
-    """)
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Supplier Compliance Score</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_supply_chain['Compliance_Score'].mean()
-    else:
-        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Compliance_Score'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col2:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Suppliers Assessed</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_supply_chain['Assessment_Completed'].mean() * 100
-    else:
-        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Assessment_Completed'].mean() * 100
-    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col3:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Supplier Vuln. Remediation</div>', unsafe_allow_html=True)
-    # This would typically come from a different data source
-    current_val = 45  # Fixed for demonstration
-    st.markdown(f'<div class="metric-value">{current_val:.1f} days</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col4:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label
+if __name__ == '__main__':
+    main()
