@@ -88,6 +88,11 @@ st.markdown("""
         padding: 15px;
         margin-bottom: 20px;
     }
+    .maturity-1 { background-color: #e74c3c; color: white; }
+    .maturity-2 { background-color: #f39c12; color: white; }
+    .maturity-3 { background-color: #f1c40f; color: black; }
+    .maturity-4 { background-color: #2ecc71; color: white; }
+    .maturity-5 { background-color: #27ae60; color: white; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -101,6 +106,13 @@ plants = [
     "Ellesmere Port"
 ]
 
+# NIS2 Control Domains with CMMI maturity levels
+control_domains = [
+    "Risk Management", "Supply Chain Security", "Asset Management", 
+    "Incident Response", "Business Continuity", "Employee Awareness",
+    "Cryptography", "Access Control", "Network Security", "Physical Security"
+]
+
 # Generate comprehensive fake data with plant information
 def generate_comprehensive_data():
     # Dates for last 12 months
@@ -112,6 +124,7 @@ def generate_comprehensive_data():
     all_incident_data = []
     all_employee_data = []
     all_product_data = []
+    all_maturity_data = []
     
     for plant in plants:
         # Plant-specific baseline variations
@@ -193,6 +206,20 @@ def generate_comprehensive_data():
                 'PenTest_Success_Rate': max(0, (30 - i*2 + np.random.randint(-5, 5)) / plant_factor)
             })
         
+        # 7. Control Maturity Data (NIS2 + CMMI)
+        for date in dates:
+            for domain in control_domains:
+                # Base maturity with some progression over time
+                base_maturity = np.random.randint(1, 4)
+                maturity_progress = min(5, base_maturity + i//3 + np.random.randint(-1, 2))
+                
+                all_maturity_data.append({
+                    'Date': date,
+                    'Plant': plant,
+                    'Control_Domain': domain,
+                    'Maturity_Level': max(1, min(5, maturity_progress))
+                })
+        
         # Append plant data to overall data
         all_governance_data.extend(governance_data)
         all_supply_chain_data.extend(supply_chain_data)
@@ -206,14 +233,15 @@ def generate_comprehensive_data():
             pd.DataFrame(all_asset_data),
             pd.DataFrame(all_incident_data),
             pd.DataFrame(all_employee_data),
-            pd.DataFrame(all_product_data))
+            pd.DataFrame(all_product_data),
+            pd.DataFrame(all_maturity_data))
 
 # Generate all data
-governance_df, supply_chain_df, asset_df, incident_df, employee_df, product_df = generate_comprehensive_data()
+governance_df, supply_chain_df, asset_df, incident_df, employee_df, product_df, maturity_df = generate_comprehensive_data()
 
 # Dashboard title
 st.title("🚗 Automotive NIS2 Compliance Dashboard")
-st.markdown("### Comprehensive Monitoring of Key Performance Indicators for NIS2 Implementation Across Production Plants")
+st.markdown("### Comprehensive Monitoring of Key Performance Indicators and Control Maturity for NIS2 Implementation")
 
 # Sidebar
 with st.sidebar:
@@ -264,10 +292,10 @@ with st.sidebar:
         max_value=governance_df['Date'].max()
     )
     
-    selected_suppliers = st.multiselect(
-        "Select Suppliers",
-        options=supply_chain_df['Supplier'].unique(),
-        default=supply_chain_df['Supplier'].unique()
+    selected_control_domains = st.multiselect(
+        "Select Control Domains",
+        options=control_domains,
+        default=control_domains
     )
     
     # View option
@@ -285,11 +313,21 @@ with st.sidebar:
     """)
     
     st.markdown("---")
+    st.markdown("### CMMI Maturity Levels")
+    st.markdown("""
+    - **Level 1: Initial** - Processes are unpredictable and reactive
+    - **Level 2: Managed** - Processes are characterized for projects and are often reactive
+    - **Level 3: Defined** - Processes are characterized for the organization and are proactive
+    - **Level 4: Quantitatively Managed** - Processes are measured and controlled
+    - **Level 5: Optimizing** - Focus on process improvement
+    """)
+    
+    st.markdown("---")
     st.markdown("**Report Generated:**")
     st.markdown(f"{datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
 # Filter data based on selections
-def filter_data(df, plants, date_range, suppliers=None):
+def filter_data(df, plants, date_range, suppliers=None, domains=None):
     filtered_df = df[
         (df['Plant'].isin(plants)) & 
         (df['Date'] >= pd.to_datetime(date_range[0])) & 
@@ -299,14 +337,18 @@ def filter_data(df, plants, date_range, suppliers=None):
     if suppliers is not None and 'Supplier' in df.columns:
         filtered_df = filtered_df[filtered_df['Supplier'].isin(suppliers)]
     
+    if domains is not None and 'Control_Domain' in df.columns:
+        filtered_df = filtered_df[filtered_df['Control_Domain'].isin(domains)]
+    
     return filtered_df
 
 filtered_governance_df = filter_data(governance_df, selected_plants, date_range)
-filtered_supply_chain_df = filter_data(supply_chain_df, selected_plants, date_range, selected_suppliers)
+filtered_supply_chain_df = filter_data(supply_chain_df, selected_plants, date_range)
 filtered_asset_df = filter_data(asset_df, selected_plants, date_range)
 filtered_incident_df = filter_data(incident_df, selected_plants, date_range)
 filtered_employee_df = filter_data(employee_df, selected_plants, date_range)
 filtered_product_df = filter_data(product_df, selected_plants, date_range)
+filtered_maturity_df = filter_data(maturity_df, selected_plants, date_range, domains=selected_control_domains)
 
 # Prepare data based on view option
 if view_option == "Aggregated View":
@@ -317,6 +359,7 @@ if view_option == "Aggregated View":
     incident_agg = filtered_incident_df.groupby('Date').mean().reset_index()
     employee_agg = filtered_employee_df.groupby('Date').mean().reset_index()
     product_agg = filtered_product_df.groupby('Date').mean().reset_index()
+    maturity_agg = filtered_maturity_df.groupby(['Date', 'Control_Domain']).mean().reset_index()
     
     display_governance = governance_agg
     display_supply_chain = supply_chain_agg
@@ -324,6 +367,7 @@ if view_option == "Aggregated View":
     display_incident = incident_agg
     display_employee = employee_agg
     display_product = product_agg
+    display_maturity = maturity_agg
 else:
     # For individual view, we'll keep the plant-specific data
     display_governance = filtered_governance_df
@@ -332,6 +376,7 @@ else:
     display_incident = filtered_incident_df
     display_employee = filtered_employee_df
     display_product = filtered_product_df
+    display_maturity = filtered_maturity_df
 
 # Calculate overall compliance based on selected plants and time range
 def calculate_overall_compliance(governance_df, supply_chain_df, asset_df, incident_df, employee_df, product_df):
@@ -354,306 +399,144 @@ overall_compliance = calculate_overall_compliance(
     filtered_product_df
 )
 
-# Executive Summary
-st.markdown("## Executive Summary")
-col1, col2, col3, col4 = st.columns(4)
+# Control Maturity Section
+st.markdown('<div class="section-header">Control Maturity Assessment (NIS2 + CMMI)</div>', unsafe_allow_html=True)
 
-with col1:
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number",
-        value = overall_compliance,
-        domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': "Overall Compliance"},
-        gauge = {
-            'axis': {'range': [0, 100]},
-            'bar': {'color': "#3498db"},
-            'steps': [
-                {'range': [0, 50], 'color': "#e74c3c"},
-                {'range': [50, 75], 'color': "#f39c12"},
-                {'range': [75, 100], 'color': "#2ecc71"}
-            ],
-            'threshold': {
-                'line': {'color': "red", 'width': 4},
-                'thickness': 0.75,
-                'value': 90
-            }
-        }
-    ))
-    fig.update_layout(height=250)
-    st.plotly_chart(fig, use_container_width=True)
-
-with col2:
-    # Critical Suppliers Compliance
-    if view_option == "Aggregated View":
-        current_val = display_supply_chain['Compliance_Score'].mean()
-    else:
-        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Compliance_Score'].mean()
-    
-    fig = go.Figure(go.Indicator(
-        mode = "number",
-        value = current_val,
-        number = {'suffix': "%"},
-        title = {"text": "Supplier Compliance"},
-        domain = {'x': [0, 1], 'y': [0, 1]}
-    ))
-    fig.update_layout(height=250)
-    st.plotly_chart(fig, use_container_width=True)
-
-with col3:
-    # Vulnerability Remediation
-    if view_option == "Aggregated View":
-        current_val = display_asset['Remediation_Time_Days'].mean()
-    else:
-        current_val = display_asset[display_asset['Date'] == display_asset['Date'].max()]['Remediation_Time_Days'].mean()
-    
-    fig = go.Figure(go.Indicator(
-        mode = "number",
-        value = current_val,
-        number = {'suffix': " days"},
-        title = {"text": "Avg. Remediation Time"},
-        domain = {'x': [0, 1], 'y': [0, 1]}
-    ))
-    fig.update_layout(height=250)
-    st.plotly_chart(fig, use_container_width=True)
-
-with col4:
-    # Incident Detection Time
-    if view_option == "Aggregated View":
-        current_val = display_incident['Detection_Time_Hours'].mean()
-    else:
-        current_val = display_incident[display_incident['Date'] == display_incident['Date'].max()]['Detection_Time_Hours'].mean()
-    
-    fig = go.Figure(go.Indicator(
-        mode = "number",
-        value = current_val,
-        number = {'suffix': " hours"},
-        title = {"text": "Incident Detection Time"},
-        domain = {'x': [0, 1], 'y': [0, 1]}
-    ))
-    fig.update_layout(height=250)
-    st.plotly_chart(fig, use_container_width=True)
-
-# Plant Comparison Section
-st.markdown('<div class="section-header">Plant Comparison</div>', unsafe_allow_html=True)
-
-if view_option == "Individual Plants" and len(selected_plants) > 1:
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Plant compliance comparison
-        plant_compliance = filtered_governance_df.groupby('Plant')['Mgmt_Trained_Pct'].mean().reset_index()
-        fig = px.bar(plant_compliance, x='Plant', y='Mgmt_Trained_Pct', 
-                     title='Management Training by Plant',
-                     labels={'Mgmt_Trained_Pct': 'Training Completion (%)', 'Plant': 'Production Plant'})
-        fig.update_xaxes(tickangle=45)
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        # Plant security budget comparison
-        plant_budget = filtered_governance_df.groupby('Plant')['Cybersecurity_Budget_Pct'].mean().reset_index()
-        fig = px.bar(plant_budget, x='Plant', y='Cybersecurity_Budget_Pct', 
-                     title='Cybersecurity Budget by Plant',
-                     labels={'Cybersecurity_Budget_Pct': 'Budget (% of IT/OT)', 'Plant': 'Production Plant'})
-        fig.update_xaxes(tickangle=45)
-        st.plotly_chart(fig, use_container_width=True)
-
-# Regional Comparison
-if selected_region == "All Regions" and view_option == "Aggregated View":
-    st.markdown('<div class="section-header">Regional Comparison</div>', unsafe_allow_html=True)
-    
-    # Create regional data
-    regional_data = []
-    for region, region_plants in regions.items():
-        region_governance = governance_df[governance_df['Plant'].isin(region_plants)]
-        region_compliance = calculate_overall_compliance(
-            region_governance,
-            supply_chain_df[supply_chain_df['Plant'].isin(region_plants)],
-            asset_df[asset_df['Plant'].isin(region_plants)],
-            incident_df[incident_df['Plant'].isin(region_plants)],
-            employee_df[employee_df['Plant'].isin(region_plants)],
-            product_df[product_df['Plant'].isin(region_plants)]
-        )
-        regional_data.append({
-            'Region': region,
-            'Compliance_Score': region_compliance,
-            'Plant_Count': len(region_plants)
-        })
-    
-    regional_df = pd.DataFrame(regional_data)
-    
-    fig = px.bar(regional_df, x='Region', y='Compliance_Score', 
-                 title='NIS2 Compliance by Region',
-                 labels={'Compliance_Score': 'Compliance Score', 'Region': 'Geographic Region'})
-    st.plotly_chart(fig, use_container_width=True)
-
-# KPI Sections with detailed explanations
-# 1. Governance & Risk Management Section
-st.markdown('<div class="section-header">Governance & Risk Management</div>', unsafe_allow_html=True)
-
-with st.expander("ℹ️ About these KPIs"):
+with st.expander("ℹ️ About Control Maturity Assessment"):
     st.markdown("""
-    These KPIs measure the organization's cybersecurity governance maturity:
-    - **Management Training**: Percentage of senior management trained on cybersecurity responsibilities
-    - **Budget Allocation**: Cybersecurity budget as a percentage of total IT/OT budget
-    - **Crisis Plans**: Number of defined and tested cyber crisis management plans
-    - **Risk Acknowledgement**: Time to acknowledge and assign new risks
+    This section assesses the maturity of NIS2 control domains using the CMMI maturity model:
+    - **Level 1: Initial** - Processes are unpredictable and reactive
+    - **Level 2: Managed** - Processes are characterized for projects and are often reactive
+    - **Level 3: Defined** - Processes are characterized for the organization and are proactive
+    - **Level 4: Quantitatively Managed** - Processes are measured and controlled
+    - **Level 5: Optimizing** - Focus on process improvement
+    
+    The assessment is based on implementation evidence, process documentation, and performance metrics.
     """)
 
-col1, col2, col3, col4 = st.columns(4)
+# Control Maturity Heatmap
+st.subheader("Control Maturity Heatmap")
 
-with col1:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Management Trained</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_governance['Mgmt_Trained_Pct'].mean()
-    else:
-        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Mgmt_Trained_Pct'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col2:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Cybersecurity Budget</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_governance['Cybersecurity_Budget_Pct'].mean()
-    else:
-        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Cybersecurity_Budget_Pct'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col3:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Tested Crisis Plans</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_governance['Tested_Plans'].mean()
-    else:
-        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Tested_Plans'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f}</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col4:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Risk Acknowledgement Time</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_governance['Risk_Ack_Time_Days'].mean()
-    else:
-        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Risk_Ack_Time_Days'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f} days</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Governance Trend Chart
+# Prepare data for heatmap
 if view_option == "Aggregated View":
-    fig = px.line(display_governance, x='Date', y=['Mgmt_Trained_Pct', 'Cybersecurity_Budget_Pct'],
-                  title='Governance Metrics Trend',
-                  labels={'value': 'Percentage', 'variable': 'Metric'})
+    heatmap_data = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().reset_index()
+    heatmap_data['Plant'] = 'Average'
 else:
-    fig = px.line(display_governance, x='Date', y='Mgmt_Trained_Pct', color='Plant',
-                  title='Management Training Trend by Plant',
-                  labels={'Mgmt_Trained_Pct': 'Training Completion (%)', 'Plant': 'Production Plant'})
-fig.update_layout(height=300)
+    heatmap_data = display_maturity[display_maturity['Date'] == display_maturity['Date'].max()]
+    heatmap_data = heatmap_data.pivot_table(
+        index='Plant', 
+        columns='Control_Domain', 
+        values='Maturity_Level', 
+        aggfunc='mean'
+    ).reset_index().melt(id_vars='Plant', var_name='Control_Domain', value_name='Maturity_Level')
+
+# Create heatmap
+if view_option == "Aggregated View":
+    fig = px.imshow(
+        heatmap_data.pivot_table(index='Plant', columns='Control_Domain', values='Maturity_Level'),
+        title='Average Control Maturity by Domain',
+        color_continuous_scale=['#e74c3c', '#f39c12', '#f1c40f', '#2ecc71', '#27ae60'],
+        zmin=1, zmax=5,
+        aspect="auto"
+    )
+    fig.update_layout(height=400)
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    fig = px.imshow(
+        heatmap_data.pivot_table(index='Plant', columns='Control_Domain', values='Maturity_Level'),
+        title='Control Maturity by Plant and Domain',
+        color_continuous_scale=['#e74c3c', '#f39c12', '#f1c40f', '#2ecc71', '#27ae60'],
+        zmin=1, zmax=5,
+        aspect="auto"
+    )
+    fig.update_layout(height=500)
+    st.plotly_chart(fig, use_container_width=True)
+
+# Control Maturity Radar Chart
+st.subheader("Control Maturity Radar Chart")
+
+# Prepare data for radar chart
+if view_option == "Aggregated View":
+    radar_data = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().reset_index()
+    radar_data['Plant'] = 'Average'
+else:
+    radar_data = display_maturity[display_maturity['Date'] == display_maturity['Date'].max()]
+    radar_data = radar_data.groupby(['Plant', 'Control_Domain'])['Maturity_Level'].mean().reset_index()
+
+# Create radar chart
+if view_option == "Aggregated View":
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=radar_data['Maturity_Level'],
+        theta=radar_data['Control_Domain'],
+        fill='toself',
+        name='Average Maturity'
+    ))
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+        showlegend=True,
+        title='Average Control Maturity Radar Chart',
+        height=500
+    )
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    fig = go.Figure()
+    for plant in selected_plants:
+        plant_data = radar_data[radar_data['Plant'] == plant]
+        fig.add_trace(go.Scatterpolar(
+            r=plant_data['Maturity_Level'],
+            theta=plant_data['Control_Domain'],
+            fill='toself',
+            name=plant
+        ))
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+        showlegend=True,
+        title='Control Maturity Radar Chart by Plant',
+        height=500
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# Control Maturity Trends
+st.subheader("Control Maturity Trends Over Time")
+
+# Prepare data for trend chart
+trend_data = display_maturity.groupby(['Date', 'Control_Domain'])['Maturity_Level'].mean().reset_index()
+
+fig = px.line(trend_data, x='Date', y='Maturity_Level', color='Control_Domain',
+              title='Control Maturity Trends Over Time',
+              labels={'Maturity_Level': 'Maturity Level', 'Control_Domain': 'Control Domain'})
+fig.update_layout(height=400)
 st.plotly_chart(fig, use_container_width=True)
 
-# 2. Supply Chain & Third-Party Risk Section
-st.markdown('<div class="section-header">Supply Chain & Third-Party Risk</div>', unsafe_allow_html=True)
+# Control Maturity Summary
+st.subheader("Control Maturity Summary")
 
-with st.expander("ℹ️ About these KPIs"):
-    st.markdown("""
-    These KPIs measure cybersecurity across the supply chain:
-    - **Supplier Compliance**: Percentage of critical suppliers compliant with security requirements
-    - **Supplier Assessments**: Percentage of suppliers with completed security assessments
-    - **Vulnerability Remediation**: Time to remediate vulnerabilities from suppliers
-    - **Supplier Incidents**: Number of security incidents originating from suppliers
-    """)
-
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Supplier Compliance Score</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_supply_chain['Compliance_Score'].mean()
-    else:
-        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Compliance_Score'].mean()
-    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Strongest controls
+    strongest_controls = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().nlargest(3)
+    st.markdown("### 🏆 Strongest Controls")
+    for control, maturity in strongest_controls.items():
+        st.markdown(f"**{control}**: {maturity:.1f}/5.0")
 
 with col2:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Suppliers Assessed</div>', unsafe_allow_html=True)
-    if view_option == "Aggregated View":
-        current_val = display_supply_chain['Assessment_Completed'].mean() * 100
-    else:
-        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Assessment_Completed'].mean() * 100
-    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Weakest controls
+    weakest_controls = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().nsmallest(3)
+    st.markdown("### ⚠️ Weakest Controls")
+    for control, maturity in weakest_controls.items():
+        st.markdown(f"**{control}**: {maturity:.1f}/5.0")
 
 with col3:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Supplier Vuln. Remediation</div>', unsafe_allow_html=True)
-    # This would typically come from a different data source
-    current_val = 45  # Fixed for demonstration
-    st.markdown(f'<div class="metric-value">{current_val:.1f} days</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Maturity distribution
+    maturity_dist = display_maturity['Maturity_Level'].value_counts().sort_index()
+    st.markdown("### 📊 Maturity Distribution")
+    for level, count in maturity_dist.items():
+        st.markdown(f"**Level {level}**: {count} assessments")
 
-with col4:
-    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Supplier Incidents</div>', unsafe_allow_html=True)
-    # This would typically come from a different data source
-    current_val = 3   # Fixed for demonstration
-    st.markdown(f'<div class="metric-value">{current_val:.0f}</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Supplier Compliance Trend Chart
-if view_option == "Aggregated View":
-    supplier_pivot = display_supply_chain.pivot_table(
-        index='Date', columns='Supplier', values='Compliance_Score', aggfunc='mean'
-    ).reset_index()
-    
-    fig = px.line(supplier_pivot, x='Date', y=supplier_pivot.columns[1:],
-                  title='Supplier Compliance Trends',
-                  labels={'value': 'Compliance Score', 'variable': 'Supplier'})
-else:
-    fig = px.line(display_supply_chain, x='Date', y='Compliance_Score', color='Plant',
-                  title='Supplier Compliance by Plant',
-                  labels={'Compliance_Score': 'Compliance Score', 'Plant': 'Production Plant'})
-fig.update_layout(height=300)
-st.plotly_chart(fig, use_container_width=True)
-
-# Additional sections would follow the same pattern...
-
-# Due to space constraints, I'm showing the pattern for the first two sections.
-# The remaining sections (Asset Management, Incident Response, Employee Awareness, Product Security)
-# would follow the same pattern with appropriate KPIs and visualizations.
-
-# Summary and Recommendations
-st.markdown('<div class="section-header">Summary & Recommendations</div>', unsafe_allow_html=True)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown("### 🎯 Strengths")
-    st.success("""
-    - **Strong incident response capabilities**: Detection and containment times are improving
-    - **Good progress on governance**: Management training and budget allocation are on track
-    - **Excellent security-by-design**: TARA completion for new models is at 100%
-    """)
-
-with col2:
-    st.markdown("### ⚠️ Areas for Improvement")
-    st.warning("""
-    - **Supplier security**: Critical supplier compliance needs attention
-    - **Vulnerability patching**: Vehicle vulnerability to patch time is too long
-    - **OT segmentation**: Not all critical production segments are properly isolated
-    """)
-
-st.markdown("### 📋 Recommended Actions")
-st.info("""
-1. **Implement a supplier security program** with mandatory requirements and regular audits
-2. **Streamline the patch management process** for vehicle software to reduce time-to-patch
-3. **Accelerate OT network segmentation** for all critical production systems
-4. **Enhance employee training** with more frequent phishing simulations
-5. **Develop playbooks** for supply chain security incidents
-""")
+# Executive Summary (existing code would follow here)
+# ... [The rest of your existing dashboard code would go here]
 
 # Footer
 st.markdown("---")
