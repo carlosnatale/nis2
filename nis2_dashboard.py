@@ -292,6 +292,12 @@ with st.sidebar:
         max_value=governance_df['Date'].max()
     )
     
+    selected_suppliers = st.multiselect(
+        "Select Suppliers",
+        options=supply_chain_df['Supplier'].unique(),
+        default=supply_chain_df['Supplier'].unique()
+    )
+    
     selected_control_domains = st.multiselect(
         "Select Control Domains",
         options=control_domains,
@@ -343,7 +349,7 @@ def filter_data(df, plants, date_range, suppliers=None, domains=None):
     return filtered_df
 
 filtered_governance_df = filter_data(governance_df, selected_plants, date_range)
-filtered_supply_chain_df = filter_data(supply_chain_df, selected_plants, date_range)
+filtered_supply_chain_df = filter_data(supply_chain_df, selected_plants, date_range, selected_suppliers)
 filtered_asset_df = filter_data(asset_df, selected_plants, date_range)
 filtered_incident_df = filter_data(incident_df, selected_plants, date_range)
 filtered_employee_df = filter_data(employee_df, selected_plants, date_range)
@@ -399,6 +405,85 @@ overall_compliance = calculate_overall_compliance(
     filtered_product_df
 )
 
+# Executive Summary
+st.markdown("## Executive Summary")
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = overall_compliance,
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        title = {'text': "Overall Compliance"},
+        gauge = {
+            'axis': {'range': [0, 100]},
+            'bar': {'color': "#3498db"},
+            'steps': [
+                {'range': [0, 50], 'color': "#e74c3c"},
+                {'range': [50, 75], 'color': "#f39c12"},
+                {'range': [75, 100], 'color': "#2ecc71"}
+            ],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': 90
+            }
+        }
+    ))
+    fig.update_layout(height=250)
+    st.plotly_chart(fig, use_container_width=True)
+
+with col2:
+    # Critical Suppliers Compliance
+    if view_option == "Aggregated View":
+        current_val = display_supply_chain['Compliance_Score'].mean()
+    else:
+        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Compliance_Score'].mean()
+    
+    fig = go.Figure(go.Indicator(
+        mode = "number",
+        value = current_val,
+        number = {'suffix': "%"},
+        title = {"text": "Supplier Compliance"},
+        domain = {'x': [0, 1], 'y': [0, 1]}
+    ))
+    fig.update_layout(height=250)
+    st.plotly_chart(fig, use_container_width=True)
+
+with col3:
+    # Vulnerability Remediation
+    if view_option == "Aggregated View":
+        current_val = display_asset['Remediation_Time_Days'].mean()
+    else:
+        current_val = display_asset[display_asset['Date'] == display_asset['Date'].max()]['Remediation_Time_Days'].mean()
+    
+    fig = go.Figure(go.Indicator(
+        mode = "number",
+        value = current_val,
+        number = {'suffix': " days"},
+        title = {"text": "Avg. Remediation Time"},
+        domain = {'x': [0, 1], 'y': [0, 1]}
+    ))
+    fig.update_layout(height=250)
+    st.plotly_chart(fig, use_container_width=True)
+
+with col4:
+    # Incident Detection Time
+    if view_option == "Aggregated View":
+        current_val = display_incident['Detection_Time_Hours'].mean()
+    else:
+        current_val = display_incident[display_incident['Date'] == display_incident['Date'].max()]['Detection_Time_Hours'].mean()
+    
+    fig = go.Figure(go.Indicator(
+        mode = "number",
+        value = current_val,
+        number = {'suffix': " hours"},
+        title = {"text": "Incident Detection Time"},
+        domain = {'x': [0, 1], 'y': [0, 1]}
+    ))
+    fig.update_layout(height=250)
+    st.plotly_chart(fig, use_container_width=True)
+
 # Control Maturity Section
 st.markdown('<div class="section-header">Control Maturity Assessment (NIS2 + CMMI)</div>', unsafe_allow_html=True)
 
@@ -452,6 +537,44 @@ else:
     fig.update_layout(height=500)
     st.plotly_chart(fig, use_container_width=True)
 
+# Control Maturity Summary
+st.subheader("Control Maturity Summary")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    # Strongest controls
+    strongest_controls = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().nlargest(3)
+    st.markdown("### 🏆 Strongest Controls")
+    for control, maturity in strongest_controls.items():
+        st.markdown(f"**{control}**: {maturity:.1f}/5.0")
+
+with col2:
+    # Weakest controls
+    weakest_controls = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().nsmallest(3)
+    st.markdown("### ⚠️ Weakest Controls")
+    for control, maturity in weakest_controls.items():
+        st.markdown(f"**{control}**: {maturity:.1f}/5.0")
+
+with col3:
+    # Maturity distribution
+    maturity_dist = display_maturity['Maturity_Level'].value_counts().sort_index()
+    st.markdown("### 📊 Maturity Distribution")
+    for level, count in maturity_dist.items():
+        st.markdown(f"**Level {level}**: {count} assessments")
+
+# Control Maturity Trends
+st.subheader("Control Maturity Trends Over Time")
+
+# Prepare data for trend chart
+trend_data = display_maturity.groupby(['Date', 'Control_Domain'])['Maturity_Level'].mean().reset_index()
+
+fig = px.line(trend_data, x='Date', y='Maturity_Level', color='Control_Domain',
+              title='Control Maturity Trends Over Time',
+              labels={'Maturity_Level': 'Maturity Level', 'Control_Domain': 'Control Domain'})
+fig.update_layout(height=400)
+st.plotly_chart(fig, use_container_width=True)
+
 # Control Maturity Radar Chart
 st.subheader("Control Maturity Radar Chart")
 
@@ -497,46 +620,431 @@ else:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-# Control Maturity Trends
-st.subheader("Control Maturity Trends Over Time")
+# 1. Governance & Risk Management Section
+st.markdown('<div class="section-header">Governance & Risk Management</div>', unsafe_allow_html=True)
 
-# Prepare data for trend chart
-trend_data = display_maturity.groupby(['Date', 'Control_Domain'])['Maturity_Level'].mean().reset_index()
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure the organization's cybersecurity governance maturity:
+    - **Management Training**: Percentage of senior management trained on cybersecurity responsibilities
+    - **Budget Allocation**: Cybersecurity budget as a percentage of total IT/OT budget
+    - **Crisis Plans**: Number of defined and tested cyber crisis management plans
+    - **Risk Acknowledgement**: Time to acknowledge and assign new risks
+    """)
 
-fig = px.line(trend_data, x='Date', y='Maturity_Level', color='Control_Domain',
-              title='Control Maturity Trends Over Time',
-              labels={'Maturity_Level': 'Maturity Level', 'Control_Domain': 'Control Domain'})
-fig.update_layout(height=400)
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Management Trained</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_governance['Mgmt_Trained_Pct'].mean()
+    else:
+        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Mgmt_Trained_Pct'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col2:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Cybersecurity Budget</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_governance['Cybersecurity_Budget_Pct'].mean()
+    else:
+        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Cybersecurity_Budget_Pct'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col3:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Tested Crisis Plans</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_governance['Tested_Plans'].mean()
+    else:
+        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Tested_Plans'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col4:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Risk Acknowledgement Time</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_governance['Risk_Ack_Time_Days'].mean()
+    else:
+        current_val = display_governance[display_governance['Date'] == display_governance['Date'].max()]['Risk_Ack_Time_Days'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f} days</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Governance Trend Chart
+if view_option == "Aggregated View":
+    fig = px.line(display_governance, x='Date', y=['Mgmt_Trained_Pct', 'Cybersecurity_Budget_Pct'],
+                  title='Governance Metrics Trend',
+                  labels={'value': 'Percentage', 'variable': 'Metric'})
+else:
+    fig = px.line(display_governance, x='Date', y='Mgmt_Trained_Pct', color='Plant',
+                  title='Management Training Trend by Plant',
+                  labels={'Mgmt_Trained_Pct': 'Training Completion (%)', 'Plant': 'Production Plant'})
+fig.update_layout(height=300)
 st.plotly_chart(fig, use_container_width=True)
 
-# Control Maturity Summary
-st.subheader("Control Maturity Summary")
+# 2. Supply Chain & Third-Party Risk Section
+st.markdown('<div class="section-header">Supply Chain & Third-Party Risk</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure cybersecurity across the supply chain:
+    - **Supplier Compliance**: Percentage of critical suppliers compliant with security requirements
+    - **Supplier Assessments**: Percentage of suppliers with completed security assessments
+    - **Vulnerability Remediation**: Time to remediate vulnerabilities from suppliers
+    - **Supplier Incidents**: Number of security incidents originating from suppliers
+    """)
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Supplier Compliance Score</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_supply_chain['Compliance_Score'].mean()
+    else:
+        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Compliance_Score'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col2:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Suppliers Assessed</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_supply_chain['Assessment_Completed'].mean() * 100
+    else:
+        current_val = display_supply_chain[display_supply_chain['Date'] == display_supply_chain['Date'].max()]['Assessment_Completed'].mean() * 100
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col3:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Supplier Vuln. Remediation</div>', unsafe_allow_html=True)
+    # This would typically come from a different data source
+    current_val = 45  # Fixed for demonstration
+    st.markdown(f'<div class="metric-value">{current_val:.1f} days</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col4:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Supplier Incidents</div>', unsafe_allow_html=True)
+    # This would typically come from a different data source
+    current_val = 3   # Fixed for demonstration
+    st.markdown(f'<div class="metric-value">{current_val:.0f}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Supplier Compliance Trend Chart
+if view_option == "Aggregated View":
+    supplier_pivot = display_supply_chain.pivot_table(
+        index='Date', columns='Supplier', values='Compliance_Score', aggfunc='mean'
+    ).reset_index()
+    
+    fig = px.line(supplier_pivot, x='Date', y=supplier_pivot.columns[1:],
+                  title='Supplier Compliance Trends',
+                  labels={'value': 'Compliance Score', 'variable': 'Supplier'})
+else:
+    fig = px.line(display_supply_chain, x='Date', y='Compliance_Score', color='Plant',
+                  title='Supplier Compliance by Plant',
+                  labels={'Compliance_Score': 'Compliance Score', 'Plant': 'Production Plant'})
+fig.update_layout(height=300)
+st.plotly_chart(fig, use_container_width=True)
+
+# 3. Asset Management & Vulnerability Section
+st.markdown('<div class="section-header">Asset Management & Vulnerability</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure how well the organization manages its assets and vulnerabilities:
+    - **Assets Discovered**: Percentage of IT and OT assets discovered and classified
+    - **Critical Vulnerabilities**: Number of critical vulnerabilities detected
+    - **Remediation Time**: Mean time to remediate critical vulnerabilities
+    - **OT Segmentation**: Percentage of critical OT segments properly isolated
+    """)
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Assets Discovered</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_asset['Assets_Discovered_Pct'].mean()
+    else:
+        current_val = display_asset[display_asset['Date'] == display_asset['Date'].max()]['Assets_Discovered_Pct'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col2:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Critical Vulnerabilities</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_asset['Critical_Vulnerabilities'].mean()
+    else:
+        current_val = display_asset[display_asset['Date'] == display_asset['Date'].max()]['Critical_Vulnerabilities'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.0f}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col3:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Vuln. Remediation Time</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_asset['Remediation_Time_Days'].mean()
+    else:
+        current_val = display_asset[display_asset['Date'] == display_asset['Date'].max()]['Remediation_Time_Days'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f} days</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col4:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">OT Segmentation</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_asset['OT_Segmentation_Pct'].mean()
+    else:
+        current_val = display_asset[display_asset['Date'] == display_asset['Date'].max()]['OT_Segmentation_Pct'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Vulnerability Management Chart
+fig = make_subplots(specs=[[{"secondary_y": True}]])
+fig.add_trace(
+    go.Bar(x=display_asset['Date'], y=display_asset['Critical_Vulnerabilities'], name="Critical Vulnerabilities"),
+    secondary_y=False,
+)
+fig.add_trace(
+    go.Scatter(x=display_asset['Date'], y=display_asset['Remediation_Time_Days'], name="Remediation Time (Days)"),
+    secondary_y=True,
+)
+fig.update_layout(
+    title_text="Vulnerability Management",
+    height=300
+)
+fig.update_yaxes(title_text="Critical Vulnerabilities", secondary_y=False)
+fig.update_yaxes(title_text="Remediation Time (Days)", secondary_y=True)
+st.plotly_chart(fig, use_container_width=True)
+
+# 4. Incident Response & Resilience Section
+st.markdown('<div class="section-header">Incident Response & Resilience</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure the organization's ability to respond to and recover from incidents:
+    - **Detection Time**: Mean time to detect security incidents
+    - **Containment Time**: Mean time to contain incidents
+    - **Recovery Time**: Mean time to recover from incidents
+    - **Reporting Compliance**: Percentage of incidents reported within NIS2 timelines
+    - **Downtime**: Unplanned downtime hours attributed to security incidents
+    """)
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Incident Detection Time</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_incident['Detection_Time_Hours'].mean()
+    else:
+        current_val = display_incident[display_incident['Date'] == display_incident['Date'].max()]['Detection_Time_Hours'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f} hours</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col2:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Incident Containment Time</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_incident['Containment_Time_Hours'].mean()
+    else:
+        current_val = display_incident[display_incident['Date'] == display_incident['Date'].max()]['Containment_Time_Hours'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f} hours</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col3:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Incident Recovery Time</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_incident['Recovery_Time_Hours'].mean()
+    else:
+        current_val = display_incident[display_incident['Date'] == display_incident['Date'].max()]['Recovery_Time_Hours'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f} hours</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col4:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">NIS2 Reporting Compliance</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_incident['Reported_On_Time'].mean()
+        total_incidents = display_incident['Incidents'].mean()
+    else:
+        current_val = display_incident[display_incident['Date'] == display_incident['Date'].max()]['Reported_On_Time'].mean()
+        total_incidents = display_incident[display_incident['Date'] == display_incident['Date'].max()]['Incidents'].mean()
+    compliance_pct = (current_val / total_incidents * 100) if total_incidents > 0 else 100
+    st.markdown(f'<div class="metric-value">{compliance_pct:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Additional KPI for this section
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Production Downtime Hours</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_incident['Downtime_Hours'].mean()
+    else:
+        current_val = display_incident[display_incident['Date'] == display_incident['Date'].max()]['Downtime_Hours'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f} hours</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Incident Response Times Chart
+response_df = display_incident[['Date', 'Detection_Time_Hours', 'Containment_Time_Hours', 'Recovery_Time_Hours']].melt(
+    id_vars='Date', var_name='Metric', value_name='Hours'
+)
+
+fig = px.line(response_df, x='Date', y='Hours', color='Metric',
+              title='Incident Response Times',
+              labels={'Hours': 'Time (Hours)', 'Metric': 'Response Phase'})
+fig.update_layout(height=300)
+st.plotly_chart(fig, use_container_width=True)
+
+# 5. Employee Awareness & Training Section
+st.markdown('<div class="section-header">Employee Awareness & Training</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure the effectiveness of security awareness and training programs:
+    - **Training Completion**: Percentage of employees completing mandatory training
+    - **Phishing Failure Rate**: Percentage of employees failing phishing tests
+    - **Employee Error Incidents**: Number of security incidents linked to employee error
+    """)
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    # Strongest controls
-    strongest_controls = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().nlargest(3)
-    st.markdown("### 🏆 Strongest Controls")
-    for control, maturity in strongest_controls.items():
-        st.markdown(f"**{control}**: {maturity:.1f}/5.0")
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Training Completed</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_employee['Training_Completed_Pct'].mean()
+    else:
+        current_val = display_employee[display_employee['Date'] == display_employee['Date'].max()]['Training_Completed_Pct'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
-    # Weakest controls
-    weakest_controls = display_maturity.groupby('Control_Domain')['Maturity_Level'].mean().nsmallest(3)
-    st.markdown("### ⚠️ Weakest Controls")
-    for control, maturity in weakest_controls.items():
-        st.markdown(f"**{control}**: {maturity:.1f}/5.0")
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Phishing Test Failure Rate</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_employee['Phishing_Failure_Rate'].mean()
+    else:
+        current_val = display_employee[display_employee['Date'] == display_employee['Date'].max()]['Phishing_Failure_Rate'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with col3:
-    # Maturity distribution
-    maturity_dist = display_maturity['Maturity_Level'].value_counts().sort_index()
-    st.markdown("### 📊 Maturity Distribution")
-    for level, count in maturity_dist.items():
-        st.markdown(f"**Level {level}**: {count} assessments")
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Employee Error Incidents</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_employee['Employee_Error_Incidents'].mean()
+    else:
+        current_val = display_employee[display_employee['Date'] == display_employee['Date'].max()]['Employee_Error_Incidents'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.0f}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Executive Summary (existing code would follow here)
-# ... [The rest of your existing dashboard code would go here]
+# Employee Training Chart
+fig = px.line(display_employee, x='Date', y=['Training_Completed_Pct', 'Phishing_Failure_Rate'],
+              title='Employee Training & Awareness Metrics',
+              labels={'value': 'Percentage', 'variable': 'Metric'})
+fig.update_layout(height=300)
+st.plotly_chart(fig, use_container_width=True)
+
+# 6. Product Security Section
+st.markdown('<div class="section-header">Product Security (Automotive Specific)</div>', unsafe_allow_html=True)
+
+with st.expander("ℹ️ About these KPIs"):
+    st.markdown("""
+    These KPIs measure the security of automotive products and connected services:
+    - **TARA Completion**: Percentage of new vehicle models with completed Threat Analysis and Risk Assessment
+    - **Vulnerability to Patch Time**: Time from vulnerability discovery to patch availability
+    - **OTA Capable Fleet**: Percentage of connected vehicle fleet patchable Over-The-Air
+    - **PenTest Success Rate**: Percentage of successful penetration tests on vehicle systems
+    """)
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">TARA Completion</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_product['TARA_Completed_Pct'].mean()
+    else:
+        current_val = display_product[display_product['Date'] == display_product['Date'].max()]['TARA_Completed_Pct'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col2:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">Vuln. to Patch Time</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_product['Vuln_Patch_Time_Days'].mean()
+    else:
+        current_val = display_product[display_product['Date'] == display_product['Date'].max()]['Vuln_Patch_Time_Days'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f} days</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col3:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">OTA-Capable Fleet</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_product['OTA_Capable_Pct'].mean()
+    else:
+        current_val = display_product[display_product['Date'] == display_product['Date'].max()]['OTA_Capable_Pct'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col4:
+    st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+    st.markdown('<div class="metric-label">PenTest Success Rate</div>', unsafe_allow_html=True)
+    if view_option == "Aggregated View":
+        current_val = display_product['PenTest_Success_Rate'].mean()
+    else:
+        current_val = display_product[display_product['Date'] == display_product['Date'].max()]['PenTest_Success_Rate'].mean()
+    st.markdown(f'<div class="metric-value">{current_val:.1f}%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Product Security Chart
+fig = px.line(display_product, x='Date', y=['TARA_Completed_Pct', 'OTA_Capable_Pct'],
+              title='Product Security Metrics',
+              labels={'value': 'Percentage', 'variable': 'Metric'})
+fig.update_layout(height=300)
+st.plotly_chart(fig, use_container_width=True)
+
+# Summary and Recommendations
+st.markdown('<div class="section-header">Summary & Recommendations</div>', unsafe_allow_html=True)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("### 🎯 Strengths")
+    st.success("""
+    - **Strong incident response capabilities**: Detection and containment times are improving
+    - **Good progress on governance**: Management training and budget allocation are on track
+    - **Excellent security-by-design**: TARA completion for new models is at 100%
+    """)
+
+with col2:
+    st.markdown("### ⚠️ Areas for Improvement")
+    st.warning("""
+    - **Supplier security**: Critical supplier compliance needs attention
+    - **Vulnerability patching**: Vehicle vulnerability to patch time is too long
+    - **OT segmentation**: Not all critical production segments are properly isolated
+    """)
+
+st.markdown("### 📋 Recommended Actions")
+st.info("""
+1. **Implement a supplier security program** with mandatory requirements and regular audits
+2. **Streamline the patch management process** for vehicle software to reduce time-to-patch
+3. **Accelerate OT network segmentation** for all critical production systems
+4. **Enhance employee training** with more frequent phishing simulations
+5. **Develop playbooks** for supply chain security incidents
+""")
 
 # Footer
 st.markdown("---")
